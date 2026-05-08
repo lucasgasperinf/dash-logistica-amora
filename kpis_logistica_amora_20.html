@@ -898,7 +898,7 @@ function buildImportTable(prefix,cor,bg){
   rows.forEach(function(r,i){
     var rowBg=i%2===0?'var(--w)':bg;
     html+='<tr style="background:'+rowBg+';border-bottom:.5px solid var(--bd);">';
-    cols.forEach(function(c){html+='<td style="padding:6px 10px;'+(c.k==='codigo'?'font-weight:600;')+'">'+((r[c.k])||'')+'</td>';});
+    cols.forEach(function(c){html+='<td style="padding:6px 10px;'+(c.k==='codigo'?'font-weight:600;':'')+'">'+((r[c.k])||'')+'</td>';});
     html+='</tr>';
   });
   html+='</tbody></table></div>';
