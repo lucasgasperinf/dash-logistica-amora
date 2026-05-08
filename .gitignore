@@ -1,0 +1,4 @@
+# Relatórios de dados operacionais — não versionar
+*.xls
+*.xlsx
+*.csv
