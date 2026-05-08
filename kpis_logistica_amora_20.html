@@ -504,6 +504,7 @@ function renderSeparacao(){
   html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:1.1rem;">';
   html+='<div class="kpi-card" style="--ktc:'+cor+';text-align:center;"><div class="kpi-tipo">% de faltas no dia</div><div style="font-family:var(--ff);font-size:38px;font-weight:500;color:'+semCor+';margin:8px 0;" id="sep_pct_val">'+pctStr+'</div><div style="font-size:12px;font-weight:600;color:'+semCor+';padding:4px 13px;background:'+semBg+';border-radius:99px;display:inline-block;" id="sep_pct_label">'+(pct===null?'—':pct<=3?'✅ Ótimo':pct<=5?'⚠️ Atenção':'❌ Fora da meta')+'</div><p class="alerta-box" style="margin-top:10px;">🟢 1–3% ótimo &nbsp;·&nbsp; 🟡 4–5% atenção &nbsp;·&nbsp; 🔴 6%+ fora</p></div>';
   html+='<div class="kpi-card" style="--ktc:'+cor+';"><div class="kpi-tipo">Como é calculado</div><div style="font-size:12px;color:var(--i);opacity:.75;line-height:1.8;margin-top:6px;"><strong>Pedidos com falta</strong> ÷ <strong>Total separado</strong> × 100</div></div></div>';
+  html+=buildAnalyticsBlock('sep',cor,bg);
   html+=buildImportBtn('sep',cor,bg,'Separador');html+=buildImportTable('sep',cor,bg);
   return html;
 }
@@ -526,6 +527,7 @@ function renderConferencia(){
   html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:1.1rem;">';
   html+='<div class="kpi-card" style="--ktc:'+cor+';text-align:center;"><div class="kpi-tipo">% de erros no dia</div><div style="font-family:var(--ff);font-size:38px;font-weight:500;color:'+semCor+';margin:8px 0;" id="conf_pct_val">'+pctStr+'</div><div style="font-size:12px;font-weight:600;color:'+semCor+';padding:4px 13px;background:'+semBg+';border-radius:99px;display:inline-block;" id="conf_pct_label">'+(pct===null?'—':pct<=3?'✅ Ótimo':pct<=5?'⚠️ Atenção':'❌ Fora da meta')+'</div><p class="alerta-box" style="margin-top:10px;">🟢 1–3% ótimo &nbsp;·&nbsp; 🟡 4–5% atenção &nbsp;·&nbsp; 🔴 6%+ fora</p></div>';
   html+='<div class="kpi-card" style="--ktc:'+cor+';"><div class="kpi-tipo">Como é calculado</div><div style="font-size:12px;color:var(--i);opacity:.75;line-height:1.8;margin-top:6px;"><strong>Pedidos com erro</strong> ÷ <strong>Total conferido</strong> × 100</div></div></div>';
+  html+=buildAnalyticsBlock('conf',cor,bg);
   html+=buildImportBtn('conf',cor,bg,'Conferente');html+=buildImportTable('conf',cor,bg);
   return html;
 }
@@ -1014,6 +1016,67 @@ async function uploadEstoque(event,deposito){
   };
   reader.readAsText(file,'UTF-8');
 }
+// ANALYTICS BLOCK
+function buildAnalyticsBlock(prefix,cor,bg){
+  var tmed=V[prefix+'_tmed_calc'];if(!tmed&&!V[prefix+'_itens_total'])return '';
+  var pessoa=V[prefix+'_pessoa']||'';
+  var tmedVal=tmed?parseFloat(tmed).toFixed(1)+'':'—';
+  var itens=V[prefix+'_itens_total']!==undefined?V[prefix+'_itens_total']:'—';
+  var prods=V[prefix+'_prod_total']!==undefined?V[prefix+'_prod_total']:'—';
+  var valor=V[prefix+'_valor_total'];
+  var valorStr=valor?'R$ '+parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+  var rapido=parseInt(V[prefix+'_faixa_rapido'])||0;
+  var normal=parseInt(V[prefix+'_faixa_normal'])||0;
+  var lento=parseInt(V[prefix+'_faixa_lento'])||0;
+  var totalF=rapido+normal+lento||1;
+  var t1=parseInt(V[prefix+'_turno1'])||0,t2=parseInt(V[prefix+'_turno2'])||0,totalT=t1+t2||1;
+  var top5=V[prefix+'_top5']||[];
+  var html='<div class="setor-title" style="--stc:'+cor+'">📈 Análise do relatório'+(pessoa?' — '+pessoa:'')+'</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:1.1rem;">';
+  html+='<div class="kpi-card" style="--ktc:'+cor+'"><div class="kpi-tipo">Tempo médio</div><div style="font-family:var(--ff);font-size:34px;font-weight:500;color:'+cor+';margin:6px 0;">'+tmedVal+'</div><div class="kpi-unit">min / pedido</div></div>';
+  html+='<div class="kpi-card" style="--ktc:'+cor+'"><div class="kpi-tipo">Total de itens</div><div style="font-family:var(--ff);font-size:34px;font-weight:500;color:'+cor+';margin:6px 0;">'+itens+'</div><div class="kpi-unit">SKUs no período</div></div>';
+  html+='<div class="kpi-card" style="--ktc:'+cor+'"><div class="kpi-tipo">Total de produtos</div><div style="font-family:var(--ff);font-size:34px;font-weight:500;color:'+cor+';margin:6px 0;">'+prods+'</div><div class="kpi-unit">unidades</div></div>';
+  html+='<div class="kpi-card" style="--ktc:'+cor+'"><div class="kpi-tipo">Valor movimentado</div><div style="font-size:20px;font-weight:600;color:'+cor+';margin:10px 0 4px;">'+valorStr+'</div></div>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:1.1rem;">';
+  html+='<div class="kpi-card" style="--ktc:'+cor+'"><div class="kpi-tipo">Distribuição por tempo</div>';
+  [{label:'< 5 min — rápido',val:rapido,c:'#27500A',b:'#EAF3DE'},{label:'5–15 min — normal',val:normal,c:'#633806',b:'#FAEEDA'},{label:'> 15 min — lento',val:lento,c:'#791F1F',b:'#FCEBEB'}].forEach(function(f){
+    var pct=Math.round((f.val/totalF)*100);
+    html+='<div style="margin-top:9px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span style="color:var(--i);">'+f.label+'</span><span style="font-weight:700;color:'+f.c+';">'+f.val+' ('+pct+'%)</span></div>';
+    html+='<div style="background:#e8e8e8;border-radius:99px;height:9px;"><div style="background:'+f.c+';width:'+pct+'%;height:100%;border-radius:99px;transition:width .5s;"></div></div></div>';
+  });
+  html+='</div>';
+  html+='<div class="kpi-card" style="--ktc:'+cor+'"><div class="kpi-tipo">Pedidos por turno</div>';
+  [{label:'T1 — 06h às 14h',val:t1},{label:'T2 — 14h às 22h',val:t2}].forEach(function(t){
+    var pct=Math.round((t.val/totalT)*100);
+    html+='<div style="margin-top:9px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span style="color:var(--i);">'+t.label+'</span><span style="font-weight:700;color:'+cor+';">'+t.val+' ('+pct+'%)</span></div>';
+    html+='<div style="background:#e8e8e8;border-radius:99px;height:9px;"><div style="background:'+cor+';width:'+pct+'%;height:100%;border-radius:99px;transition:width .5s;"></div></div></div>';
+  });
+  html+='</div></div>';
+  if(top5.length>0){
+    html+='<div class="setor-title" style="--stc:'+cor+'">🐌 Top 5 — pedidos mais lentos</div>';
+    html+='<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--bd);margin-bottom:1.1rem;box-shadow:var(--sh);">';
+    html+='<table style="border-collapse:collapse;font-size:12px;width:100%;"><thead><tr>';
+    ['#','Cód. Venda','Tempo (min)','Itens','Produtos','Total (R$)'].forEach(function(h,i){
+      var r=i===0?'border-radius:6px 0 0 0;':i===5?'border-radius:0 6px 0 0;':'';
+      html+='<th style="padding:8px 10px;background:'+cor+';color:#fff;font-weight:600;text-align:left;font-size:11px;'+r+'">'+h+'</th>';
+    });
+    html+='</tr></thead><tbody>';
+    top5.forEach(function(r,i){
+      var rowBg=i%2===0?'var(--w)':bg;
+      html+='<tr style="background:'+rowBg+';border-bottom:.5px solid var(--bd);">';
+      html+='<td style="padding:6px 10px;font-weight:700;color:'+cor+';">'+(i+1)+'</td>';
+      html+='<td style="padding:6px 10px;font-weight:600;">'+r.codigo+'</td>';
+      html+='<td style="padding:6px 10px;font-weight:700;color:#791F1F;">'+parseFloat(r.tempo||0).toFixed(1)+'</td>';
+      html+='<td style="padding:6px 10px;">'+r.itens+'</td>';
+      html+='<td style="padding:6px 10px;">'+r.produtos+'</td>';
+      html+='<td style="padding:6px 10px;">'+r.total+'</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table></div>';
+  }
+  return html;
+}
 // IMPORT HELPERS (existing sections)
 function buildImportBtn(prefix,cor,bg,colPessoa){
   var html='<div class="setor-title" style="--stc:'+cor+'">📂 Importar dados do sistema</div>';
@@ -1029,9 +1092,9 @@ function buildImportTable(prefix,cor,bg){
   var html='<div class="setor-title" style="--stc:'+cor+'">📋 Dados importados ('+rows.length+')</div>';
   html+='<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--bd);margin-bottom:1.1rem;box-shadow:var(--sh);">';
   html+='<table style="border-collapse:collapse;font-size:12px;width:100%;"><thead><tr>';
-  var cols=[];
-  if(prefix==='sep')cols=[{h:'Código',k:'codigo'},{h:'Data',k:'data'},{h:'Separador',k:'separador'}];
-  if(prefix==='conf')cols=[{h:'Código',k:'codigo'},{h:'Data',k:'data'},{h:'Conferente',k:'conferente'}];
+  var cols=[];var hasTempo=rows[0]&&rows[0].tempo!==undefined;
+  if(prefix==='sep')cols=hasTempo?[{h:'Código',k:'codigo'},{h:'Data',k:'data'},{h:'Hora',k:'hora'},{h:'Tempo (min)',k:'tempo'},{h:'Itens',k:'itens'},{h:'Produtos',k:'produtos'}]:[{h:'Código',k:'codigo'},{h:'Data',k:'data'},{h:'Separador',k:'separador'}];
+  if(prefix==='conf')cols=hasTempo?[{h:'Código',k:'codigo'},{h:'Data',k:'data'},{h:'Hora',k:'hora'},{h:'Tempo (min)',k:'tempo'},{h:'Itens',k:'itens'},{h:'Produtos',k:'produtos'}]:[{h:'Código',k:'codigo'},{h:'Data',k:'data'},{h:'Conferente',k:'conferente'}];
   if(prefix==='exp')cols=[{h:'Código',k:'codigo'},{h:'Data',k:'data'},{h:'Entrega',k:'entrega'},{h:'Frete',k:'frete'},{h:'Cond. Pagamento',k:'condpag'},{h:'Situação',k:'situacao'}];
   cols.forEach(function(c,i){var rad=i===0?'border-radius:6px 0 0 0;':i===cols.length-1?'border-radius:0 6px 0 0;':'';html+='<th style="padding:8px 10px;background:'+cor+';color:#fff;font-weight:600;text-align:left;font-size:11px;'+rad+'">'+c.h+'</th>';});
   html+='</tr></thead><tbody>';
@@ -1046,6 +1109,63 @@ function importarArquivo(event,prefix,colPessoa){
     var text=e.target.result;text=text.replace(/^﻿/,'');
     var lines=text.split(/\r?\n/).filter(function(l){return l.trim().length>0;});
     if(lines.length<2){if(statusEl)statusEl.textContent='Arquivo vazio.';return;}
+    // ── Detectar relatório de tempo Amora ──────────────────────────────────
+    var isTempoRel=(prefix==='sep'||prefix==='conf')&&lines[0]&&lines[0].toUpperCase().indexOf('AMORA')!==-1&&lines.length>4;
+    if(isTempoRel){
+      var pessoa='';
+      if(lines[1]&&lines[1].indexOf(':')!==-1)pessoa=lines[1].split(':').slice(1).join(':').trim();
+      // Linha 3 = headers (0=empresa,1=pessoa,2=período → idx 3 após filtro de vazios)
+      var hdrLine=lines[3]||'';
+      var d2=hdrLine.indexOf('\t')!==-1?'\t':hdrLine.indexOf(';')!==-1?';':',';
+      var hdrs=hdrLine.split(d2).map(function(h){return h.replace(/"/g,'').trim();});
+      function ci2(ns){for(var n=0;n<ns.length;n++){var x=hdrs.findIndex(function(h){return h.toLowerCase().indexOf(ns[n].toLowerCase())!==-1;});if(x!==-1)return x;}return -1;}
+      var iCod2=ci2(['cód venda','cod venda','cód','código']);if(iCod2<0)iCod2=0;
+      var iDtV=ci2(['data venda']),iHrV=ci2(['hora venda']);
+      var iItens=ci2(['itens']),iProds=ci2(['produtos']),iTotal=ci2(['total']);
+      var iTempo=ci2(['tempo']);
+      var rows2=[];
+      for(var ii=4;ii<lines.length;ii++){
+        var ff=lines[ii].split(d2).map(function(c){return c.replace(/"/g,'').trim();});
+        if(!ff[iCod2])continue;
+        var tempoVal=iTempo>=0?parseFloat(ff[iTempo].replace(',','.'))||0:0;
+        var itensVal=iItens>=0?parseFloat(ff[iItens].replace(',','.'))||0:0;
+        var prodsVal=iProds>=0?parseFloat(ff[iProds].replace(',','.'))||0:0;
+        rows2.push({codigo:ff[iCod2]||'',data:iDtV>=0?ff[iDtV]:'',hora:iHrV>=0?ff[iHrV]:'',tempo:tempoVal,itens:itensVal,produtos:prodsVal,total:iTotal>=0?ff[iTotal]:''});
+      }
+      // ── Calcular indicadores ──
+      var tempos2=rows2.map(function(r){return r.tempo;}).filter(function(t){return t>0;});
+      var tmedCalc=tempos2.length>0?tempos2.reduce(function(a,b){return a+b;},0)/tempos2.length:0;
+      var itensTotal2=rows2.reduce(function(s,r){return s+r.itens;},0);
+      var prodTotal2=rows2.reduce(function(s,r){return s+r.produtos;},0);
+      var valorTotal2=rows2.reduce(function(s,r){var v=parseFloat((r.total||'').replace(/\./g,'').replace(',','.'))||0;return s+v;},0);
+      var rapido2=rows2.filter(function(r){return r.tempo>0&&r.tempo<5;}).length;
+      var normal2=rows2.filter(function(r){return r.tempo>=5&&r.tempo<=15;}).length;
+      var lento2=rows2.filter(function(r){return r.tempo>15;}).length;
+      var t1c=0,t2c=0;
+      rows2.forEach(function(r){var h=parseInt((r.hora||'00:00').split(':')[0]);if(h>=6&&h<14)t1c++;else if(h>=14&&h<22)t2c++;});
+      var sorted2=rows2.slice().sort(function(a,b){return b.tempo-a.tempo;});
+      var top5calc=sorted2.slice(0,5).map(function(r){return{codigo:r.codigo,tempo:r.tempo,itens:r.itens,produtos:r.produtos,total:r.total};});
+      // ── Persistir em V ──
+      V[prefix+'_pessoa']=pessoa;
+      V[prefix+'_tmed_calc']=tmedCalc.toFixed(2);
+      V[prefix+'_itens_total']=Math.round(itensTotal2);
+      V[prefix+'_prod_total']=Math.round(prodTotal2);
+      V[prefix+'_valor_total']=valorTotal2.toFixed(2);
+      V[prefix+'_faixa_rapido']=rapido2;
+      V[prefix+'_faixa_normal']=normal2;
+      V[prefix+'_faixa_lento']=lento2;
+      V[prefix+'_turno1']=t1c;
+      V[prefix+'_turno2']=t2c;
+      V[prefix+'_top5']=top5calc;
+      V[prefix+'_rows']=rows2;
+      if(prefix==='sep'){setField('sep_dia',rows2.length);setField('sep_tmed',parseFloat(tmedCalc.toFixed(1)));calcPctFaltas();}
+      if(prefix==='conf'){setField('conf_dia',rows2.length);setField('conf_tmed',parseFloat(tmedCalc.toFixed(1)));calcPctConf();}
+      if(statusEl)statusEl.textContent='✓ '+rows2.length+' pedidos — relatório Amora';
+      agendarSalvar();logAtividade(prefix+'_import','',rows2.length+' pedidos (relatório tempo)');
+      renderSecao(ativo);
+      return;
+    }
+    // ── Parser genérico (CSV / exportações ERP) ──────────────────────────
     var firstLine=lines[0];var delim=firstLine.indexOf('\t')!==-1?'\t':firstLine.indexOf(';')!==-1?';':',';
     var headers=firstLine.split(delim).map(function(h){return h.replace(/"/g,'').trim();});
     function colIdx(names){for(var n=0;n<names.length;n++){var idx=headers.findIndex(function(h){return h.toLowerCase().replace(/\s/g,'').indexOf(names[n].toLowerCase().replace(/\s/g,''))!==-1;});if(idx!==-1)return idx;}return -1;}
@@ -1068,7 +1188,7 @@ function importarArquivo(event,prefix,colPessoa){
   reader.readAsText(file,'UTF-8');
 }
 function setField(id,val){V[id]=val;var el=document.getElementById('inp_'+id);if(el)el.value=val;}
-function limparImport(prefix){V[prefix+'_rows']=null;var statusEl=document.getElementById(prefix+'_imp_status');if(statusEl)statusEl.textContent='Nenhum arquivo selecionado';agendarSalvar();renderSecao(ativo);}
+function limparImport(prefix){V[prefix+'_rows']=null;['_tmed_calc','_itens_total','_prod_total','_valor_total','_faixa_rapido','_faixa_normal','_faixa_lento','_turno1','_turno2','_top5','_pessoa'].forEach(function(k){delete V[prefix+k];});var statusEl=document.getElementById(prefix+'_imp_status');if(statusEl)statusEl.textContent='Nenhum arquivo selecionado';agendarSalvar();renderSecao(ativo);}
 // MODAL
 function openModal(title,body,foot){document.getElementById('modal-title').textContent=title;document.getElementById('modal-body').innerHTML=body;document.getElementById('modal-foot').innerHTML=foot;document.getElementById('modal-overlay').classList.add('open');}
 function closeModal(){document.getElementById('modal-overlay').classList.remove('open');}
