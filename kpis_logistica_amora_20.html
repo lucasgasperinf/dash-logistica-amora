@@ -231,6 +231,7 @@ html,body{font-family:var(--fb);font-size:14px;background:var(--n);color:var(--c
     <div id="sec-ocnf" class="section"></div>
     <div id="sec-keyaccount" class="section"></div>
     <div id="sec-estoque" class="section"></div>
+    <div id="sec-compras" class="section"></div>
     <div id="sec-historico" class="section"></div>
   </main>
 </div>
@@ -250,6 +251,7 @@ var histLogs=[],histFiltroSecao='',histFiltroData='';
 var kaBadge=0,ocBadge=0;
 var estoqueDeposito='amora_rs',estoqueItens={amora_rs:[],boeng:[]},estoqueInfo={amora_rs:{},boeng:{}};
 var estoqueFiltro='',estoqueMarca='',estoqueApRuptura=false,estoqueOrdem='nome';
+var comprasMarca='',comprasOrdem='urgencia',comprasSoUrgentes=false,comprasDias=30;
 var SECOES_DIARIAS=['recebimento','separacao','conferencia','expedicao','equipe','organizacao'];
 var SECOES=[
   {id:'visao',nome:'Visão Geral',icone:'📊',grupo:'Operações'},
@@ -262,6 +264,7 @@ var SECOES=[
   {id:'ocnf',nome:'OC × NF',icone:'📥',grupo:'Gestão'},
   {id:'keyaccount',nome:'Key Account',icone:'📅',grupo:'Gestão'},
   {id:'estoque',nome:'Estoque',icone:'🏭',grupo:'Gestão'},
+  {id:'compras',nome:'Compras',icone:'🛒',grupo:'Gestão'},
   {id:'historico',nome:'Histórico',icone:'📜',grupo:'Gestão'}
 ];
 function hoje(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -358,6 +361,7 @@ function renderSecao(id){
   else if(id==='ocnf'){el.innerHTML=renderOcNf();loadOcNf();}
   else if(id==='keyaccount'){el.innerHTML=renderKeyAccount();loadKA();}
   else if(id==='estoque')el.innerHTML=renderEstoque();
+  else if(id==='compras')el.innerHTML=renderCompras();
   if(id==='separacao'){setTimeout(function(){rankBy(['sep_ana','sep_gabriel','sep_isabela','sep_joana']);},50);}
   if(id==='conferencia'){setTimeout(function(){rankBy(['conf_cassiele','conf_rebeka']);},50);}
   if(id==='expedicao'){setTimeout(function(){rankBy(['exp_saomiguel','exp_boeng','exp_azul','exp_rodonaves','exp_troca','exp_sapiranga','exp_soft']);},50);}
@@ -1029,6 +1033,201 @@ function renderEstoque(){
 function filtrarEstoque(v){estoqueFiltro=v;renderSecao('estoque');}
 function filtrarEstoqueMarca(v){estoqueMarca=v;renderSecao('estoque');}
 function ordenarEstoque(v){estoqueOrdem=v;renderSecao('estoque');}
+// ══════════════════════════════════════════════════════════════
+// RENDER COMPRAS
+// ══════════════════════════════════════════════════════════════
+function renderCompras(){
+  var cor='#7C3AED',bg='#F5F3FF';
+  var html='<div class="sec-header"><div class="sec-title" style="--stc:'+cor+'">🛒 Compras</div><div class="sec-sub">Necessidade de reposição · Jan–Mai 2026</div></div>';
+  // ── Import ──
+  html+='<div class="setor-title" style="--stc:'+cor+'">📂 Importar histórico de vendas</div>';
+  html+='<div class="import-area">';
+  html+='<label class="btn-imp" style="background:'+cor+';color:#fff;">📁 Selecionar XLS de Vendas<input type="file" accept=".xls,.xlsx,.csv" style="display:none;" onchange="importarVendas(event)"></label>';
+  html+='<span id="compras_imp_status" style="font-size:12px;color:var(--i);opacity:.6;">'+(V['compras_rows']&&V['compras_rows'].length?'✓ '+V['compras_rows'].length+' produtos carregados':'Nenhum arquivo selecionado')+'</span>';
+  if(V['compras_rows']&&V['compras_rows'].length)html+='<button class="btn-limpar" onclick="V[\'compras_rows\']=null;agendarSalvar();renderSecao(\'compras\')">✕ Limpar</button>';
+  html+='</div>';
+  var rows=V['compras_rows']||[];
+  if(!rows.length){
+    html+='<div class="hist-vazio" style="margin-top:16px;">Carregue o relatório <strong>Vendas por Item</strong> exportado do ERP para visualizar a análise de compras.</div>';
+    return html;
+  }
+  // ── Cruzar com estoque ──
+  var estAtual=estoqueItens[estoqueDeposito]||[];
+  var estMap={},custoEstMap={};
+  estAtual.forEach(function(i){estMap[i.codigo]=parseFloat(i.quantidade||0);custoEstMap[i.codigo]=parseFloat(i.custo||0);});
+  // Período: Jan 1 a Mai 9 = 129 dias
+  var periodoDias=parseFloat(V['compras_periodo']||129);
+  var meses=periodoDias/30.4;
+  // ── Enriquecer rows ──
+  var enriched=rows.map(function(r){
+    var qtdVendida=parseFloat(r.quantidade||0);
+    var velMes=meses>0?qtdVendida/meses:0;
+    var estoqueAtual=estMap.hasOwnProperty(r.codigo)?estMap[r.codigo]:null;
+    var custoUnit=qtdVendida>0?parseFloat(r.custo_total||0)/qtdVendida:(custoEstMap[r.codigo]||0);
+    var diasEstoque=(velMes>0&&estoqueAtual!==null&&estoqueAtual>0)?Math.round((estoqueAtual/velMes)*30.4):
+                    (estoqueAtual!==null&&estoqueAtual<=0)?0:null;
+    var urgencia=estoqueAtual===null?4:estoqueAtual<=0?0:diasEstoque<=30?1:diasEstoque<=60?2:3;
+    var sugestao30=Math.max(0,Math.ceil(velMes*1-((estoqueAtual||0)>0?(estoqueAtual||0):0)));
+    var sugestao60=Math.max(0,Math.ceil(velMes*2-((estoqueAtual||0)>0?(estoqueAtual||0):0)));
+    return {codigo:r.codigo,nome:r.nome,quantidade:qtdVendida,unidade:r.unidade,
+      custo_total:parseFloat(r.custo_total||0),preco_total:parseFloat(r.preco_total||0),
+      lucro_pct:parseFloat(r.lucro_pct||0),marg_pct:parseFloat(r.marg_pct||0),
+      velMes:velMes,estoqueAtual:estoqueAtual,diasEstoque:diasEstoque,
+      custoUnit:custoUnit,urgencia:urgencia,sugestao30:sugestao30,sugestao60:sugestao60};
+  });
+  // ── ABC sobre vendas (por preço total) ──
+  var abcSorted=enriched.slice().sort(function(a,b){return b.preco_total-a.preco_total;});
+  var abcTot=abcSorted.reduce(function(s,r){return s+r.preco_total;},0);
+  var abcAcum=0,abcMapC={};
+  abcSorted.forEach(function(r){abcAcum+=r.preco_total;var p=abcTot>0?abcAcum/abcTot:1;abcMapC[r.codigo]=p<=0.8?'A':p<=0.95?'B':'C';});
+  enriched.forEach(function(r){r.abc=abcMapC[r.codigo]||'C';});
+  // ── Filtros ──
+  var marcasList=[];enriched.forEach(function(r){var m=marcaItem(r.nome);if(m&&marcasList.indexOf(m)===-1)marcasList.push(m);});marcasList.sort();
+  var filtrados=enriched.slice();
+  if(comprasMarca)filtrados=filtrados.filter(function(r){return marcaItem(r.nome)===comprasMarca;});
+  if(comprasSoUrgentes)filtrados=filtrados.filter(function(r){return r.urgencia<=1;});
+  // ── Ordenar ──
+  if(comprasOrdem==='urgencia')filtrados.sort(function(a,b){return a.urgencia!==b.urgencia?a.urgencia-b.urgencia:b.preco_total-a.preco_total;});
+  else if(comprasOrdem==='vel_desc')filtrados.sort(function(a,b){return b.velMes-a.velMes;});
+  else if(comprasOrdem==='dias_asc')filtrados.sort(function(a,b){return (a.diasEstoque===null?9999:a.diasEstoque)-(b.diasEstoque===null?9999:b.diasEstoque);});
+  else if(comprasOrdem==='valor_desc')filtrados.sort(function(a,b){return b.preco_total-a.preco_total;});
+  else if(comprasOrdem==='abc')filtrados.sort(function(a,b){return a.abc.localeCompare(b.abc)||b.preco_total-a.preco_total;});
+  // ── Sumários ──
+  var ruptura=enriched.filter(function(r){return r.urgencia===0;});
+  var critico=enriched.filter(function(r){return r.urgencia===1;});
+  var atencao=enriched.filter(function(r){return r.urgencia===2;});
+  var ok=enriched.filter(function(r){return r.urgencia===3;});
+  var semEstoque=enriched.filter(function(r){return r.urgencia===4;});
+  var valorRepRuptura=ruptura.reduce(function(s,r){return s+(r.custoUnit*(r.sugestao30||Math.ceil(r.velMes)));},0);
+  var valorRepCritico=critico.reduce(function(s,r){return s+r.custoUnit*r.sugestao30;},0);
+  // ── Cards de urgência ──
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px;">';
+  [{u:0,cor:'#DC2626',bg:'#FEF2F2',icone:'🚨',label:'Ruptura',sub:'Zerado e vendendo',cnt:ruptura.length,val:valorRepRuptura},
+   {u:1,cor:'#EA580C',bg:'#FFF7ED',icone:'🔴',label:'Crítico',sub:'< 30 dias estoque',cnt:critico.length,val:valorRepCritico},
+   {u:2,cor:'#D97706',bg:'#FFFBEB',icone:'🟡',label:'Atenção',sub:'30–60 dias estoque',cnt:atencao.length,val:null},
+   {u:3,cor:'#16A34A',bg:'#F0FDF4',icone:'✅',label:'OK',sub:'> 60 dias estoque',cnt:ok.length,val:null},
+   {u:4,cor:'#6B7280',bg:'#F9FAFB',icone:'📊',label:'Sem estoque atual',sub:'Não cruzado',cnt:semEstoque.length,val:null}
+  ].forEach(function(x){
+    html+='<div style="background:'+x.bg+';border:1.5px solid '+x.cor+'33;border-radius:12px;padding:12px 14px;cursor:pointer;" onclick="comprasSoUrgentes='+(x.u<=1?'true':'false')+';comprasOrdem=\'urgencia\';renderSecao(\'compras\')">';
+    html+='<div style="font-size:20px;">'+x.icone+'</div>';
+    html+='<div style="font-size:22px;font-weight:800;color:'+x.cor+';">'+x.cnt+'</div>';
+    html+='<div style="font-size:12px;font-weight:700;color:'+x.cor+';">'+x.label+'</div>';
+    html+='<div style="font-size:10px;color:#6B7280;margin-top:2px;">'+x.sub+'</div>';
+    if(x.val!==null)html+='<div style="font-size:11px;color:'+x.cor+';margin-top:4px;font-weight:600;">Repor ≈ R$ '+x.val.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})+'</div>';
+    html+='</div>';
+  });
+  html+='</div>';
+  // ── Estatísticas gerais ──
+  var totalVendido=enriched.reduce(function(s,r){return s+r.preco_total;},0);
+  var margemMedia=enriched.length>0?enriched.reduce(function(s,r){return s+r.marg_pct;},0)/enriched.length:0;
+  html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">';
+  [{l:'SKUs analisados',v:enriched.length+' produtos',c:'#7C3AED'},{l:'Período de vendas',v:periodoDias+' dias (Jan–Mai)',c:'#7C3AED'},
+   {l:'Faturamento total',v:'R$ '+totalVendido.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0}),c:'#16A34A'},
+   {l:'Margem média',v:margemMedia.toFixed(1)+'%',c:'#D97706'}].forEach(function(k){
+    html+='<div style="flex:1;min-width:140px;background:var(--n);border-radius:10px;padding:10px 14px;border:1px solid var(--bd);">';
+    html+='<div style="font-size:10px;color:var(--i);opacity:.7;margin-bottom:2px;">'+k.l+'</div>';
+    html+='<div style="font-size:16px;font-weight:700;color:'+k.c+';">'+k.v+'</div>';
+    html+='</div>';
+  });
+  html+='</div>';
+  // ── Barra de filtros ──
+  html+='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:center;">';
+  html+='<select onchange="comprasMarca=this.value;renderSecao(\'compras\')" style="padding:8px 12px;border:1px solid var(--bd);border-radius:8px;font-size:13px;background:var(--w);color:var(--ch);cursor:pointer;">';
+  html+='<option value=""'+(comprasMarca===''?' selected':'')+'>🏷️ Todas as marcas</option>';
+  marcasList.forEach(function(m){html+='<option value="'+m+'"'+(comprasMarca===m?' selected':'')+'>'+m+'</option>';});
+  html+='</select>';
+  html+='<select onchange="comprasOrdem=this.value;renderSecao(\'compras\')" style="padding:8px 12px;border:1px solid var(--bd);border-radius:8px;font-size:13px;background:var(--w);color:var(--ch);cursor:pointer;">';
+  [['urgencia','🚨 Por urgência'],['vel_desc','🔥 Maior giro/mês'],['dias_asc','⏱️ Menos dias estoque'],['valor_desc','💰 Maior faturamento'],['abc','🅰️ Curva ABC']].forEach(function(o){html+='<option value="'+o[0]+'"'+(comprasOrdem===o[0]?' selected':'')+'>'+o[1]+'</option>';});
+  html+='</select>';
+  html+='<button onclick="comprasSoUrgentes=!comprasSoUrgentes;renderSecao(\'compras\')" style="padding:8px 14px;border-radius:8px;border:2px solid '+(comprasSoUrgentes?'#DC2626':'var(--bd)')+';background:'+(comprasSoUrgentes?'#FEF2F2':'var(--w)')+';color:'+(comprasSoUrgentes?'#DC2626':'var(--i)')+';font-size:13px;font-weight:600;cursor:pointer;">🚨 Só urgentes</button>';
+  html+='<span style="font-size:12px;color:var(--i);opacity:.6;">'+filtrados.length+' de '+enriched.length+' produtos</span>';
+  html+='</div>';
+  // ── Tabela ──
+  html+='<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--bd);box-shadow:var(--sh);">';
+  html+='<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>';
+  var thStyle='padding:8px 10px;background:'+cor+';color:#fff;font-size:10px;letter-spacing:.06em;font-weight:600;';
+  ['','ABC','Código','Produto','Marca','Vel./mês','Estq atual','Dias estq','Faturado','Margem','Repor 30d','Repor 60d'].forEach(function(h,i){
+    var align=i>=5?'text-align:right;':'text-align:left;';
+    var rad=i===0?'border-radius:8px 0 0 0;':i===11?'border-radius:0 8px 0 0;':'';
+    html+='<th style="'+thStyle+align+rad+'">'+h+'</th>';
+  });
+  html+='</tr></thead><tbody>';
+  var urgLabel=['🚨 Ruptura','🔴 Crítico','🟡 Atenção','✅ OK','⬜ S/ dado'];
+  var urgCor=['#DC2626','#EA580C','#D97706','#16A34A','#9CA3AF'];
+  var urgBg=['#FEF2F2','#FFF7ED','#FFFBEB','#F0FDF4','#F9FAFB'];
+  filtrados.slice(0,400).forEach(function(r,idx){
+    var abc=r.abc||'C';
+    var abcColor=abc==='A'?'#16A34A':abc==='B'?'#D97706':'#6B7280';
+    var abcBg=abc==='A'?'#DCFCE7':abc==='B'?'#FEF3C7':'#F3F4F6';
+    var uc=urgCor[r.urgencia]||'#6B7280';
+    var ub=urgBg[r.urgencia]||'#F9FAFB';
+    var rowBg=r.urgencia===0?'#FFF5F5':idx%2===0?'var(--w)':'var(--n)';
+    var diasTxt=r.diasEstoque===null?'—':r.diasEstoque===0?'<span style="color:#DC2626;font-weight:700;">0</span>':
+      r.diasEstoque<=30?'<span style="color:#EA580C;font-weight:700;">'+r.diasEstoque+'d</span>':
+      r.diasEstoque<=60?'<span style="color:#D97706;font-weight:600;">'+r.diasEstoque+'d</span>':
+      '<span style="color:#16A34A;">'+r.diasEstoque+'d</span>';
+    var estTxt=r.estoqueAtual===null?'<span style="opacity:.4;">—</span>':
+      r.estoqueAtual<=0?'<span style="color:#DC2626;font-weight:700;">0</span>':
+      '<span style="font-weight:600;">'+r.estoqueAtual+'</span>';
+    html+='<tr style="background:'+rowBg+';border-bottom:.5px solid var(--bd);">';
+    html+='<td style="padding:4px 8px;text-align:center;white-space:nowrap;"><span style="font-size:10px;font-weight:600;color:'+uc+';background:'+ub+';padding:2px 6px;border-radius:10px;">'+urgLabel[r.urgencia]+'</span></td>';
+    html+='<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;width:20px;height:20px;line-height:20px;border-radius:50%;background:'+abcBg+';color:'+abcColor+';font-weight:800;font-size:10px;">'+abc+'</span></td>';
+    html+='<td style="padding:6px 8px;font-weight:600;font-family:var(--fm);font-size:11px;">'+(r.codigo||'')+'</td>';
+    html+='<td style="padding:6px 8px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(r.nome||'')+'</td>';
+    html+='<td style="padding:6px 8px;font-size:11px;opacity:.8;">'+marcaItem(r.nome)+'</td>';
+    html+='<td style="padding:6px 8px;text-align:right;font-weight:700;">'+r.velMes.toFixed(1)+'<span style="font-size:10px;opacity:.5;">/mês</span></td>';
+    html+='<td style="padding:6px 8px;text-align:right;">'+estTxt+'</td>';
+    html+='<td style="padding:6px 8px;text-align:right;">'+diasTxt+'</td>';
+    html+='<td style="padding:6px 8px;text-align:right;">R$ '+r.preco_total.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})+'</td>';
+    html+='<td style="padding:6px 8px;text-align:right;color:'+(r.marg_pct>=20?'#16A34A':r.marg_pct>=10?'#D97706':'#DC2626')+';font-weight:600;">'+r.marg_pct.toFixed(1)+'%</td>';
+    html+='<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+cor+';">'+(r.sugestao30>0?r.sugestao30+' '+r.unidade:'<span style="opacity:.3;">—</span>')+'</td>';
+    html+='<td style="padding:6px 8px;text-align:right;color:#7C3AED;opacity:.8;">'+(r.sugestao60>0?r.sugestao60+' '+r.unidade:'<span style="opacity:.3;">—</span>')+'</td>';
+    html+='</tr>';
+  });
+  if(filtrados.length>400)html+='<tr><td colspan="12" style="padding:10px;text-align:center;font-size:11px;opacity:.5;">Mostrando 400 de '+filtrados.length+'. Use filtros para refinar.</td></tr>';
+  html+='</tbody></table></div>';
+  return html;
+}
+// ── Parser XLS de Vendas por Item ──
+function importarVendas(event){
+  var file=event.target.files[0];if(!file)return;
+  var statusEl=document.getElementById('compras_imp_status');if(statusEl)statusEl.textContent='Lendo arquivo...';
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var arr=new Uint8Array(e.target.result);
+      var wb=XLSX.read(arr,{type:'array'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+      // Detectar header (linha com "Código")
+      var hIdx=0;
+      for(var i=0;i<Math.min(raw.length,5);i++){if((raw[i][0]||'').toString().toLowerCase().replace(/\s/g,'').indexOf('digo')!==-1){hIdx=i;break;}}
+      var headers=raw[hIdx].map(function(c){return (c||'').toString().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');});
+      function ci(names){for(var n=0;n<names.length;n++){var idx=headers.findIndex(function(h){return h.indexOf(names[n])!==-1;});if(idx!==-1)return idx;}return -1;}
+      var iCod=ci(['digo','cod']);if(iCod===-1)iCod=0;
+      var iNome=ci(['nome','descr']),iQty=ci(['quantidade','qty','qtd']),iUn=ci(['unidade','un']);
+      var iCusto=ci(['custo_total','custo']),iPreco=ci(['pre_o_total','preco_total','pre']),iLucro=ci(['lucro']),iMarg=ci(['marg']);
+      var rows=[];
+      for(var i=hIdx+1;i<raw.length;i++){
+        var f=raw[i];
+        var cod=(f[iCod]||'').toString().trim();
+        if(!cod||!/^\d+$/.test(cod))continue; // pular rodapé / linhas não-numéricas
+        var nome=iNome>=0?(f[iNome]||'').toString().trim():'';
+        var qty=parseFloat((f[iQty]||'0').toString().replace(/\./g,'').replace(',','.'))||0;
+        var un=iUn>=0?(f[iUn]||'').toString().trim():'';
+        var custo=parseFloat((f[iCusto]||'0').toString().replace(/[R$\s\.]/g,'').replace(',','.'))||0;
+        var preco=parseFloat((f[iPreco]||'0').toString().replace(/[R$\s\.]/g,'').replace(',','.'))||0;
+        var lucro=parseFloat((f[iLucro]||'0').toString().replace(',','.'))||0;
+        var marg=parseFloat((f[iMarg]||'0').toString().replace(',','.'))||0;
+        rows.push({codigo:cod,nome:nome,quantidade:qty,unidade:un,custo_total:custo,preco_total:preco,lucro_pct:lucro,marg_pct:marg});
+      }
+      V['compras_rows']=rows;
+      if(statusEl)statusEl.textContent='✓ '+rows.length+' produtos carregados';
+      agendarSalvar();renderSecao('compras');
+    }catch(err){if(statusEl)statusEl.textContent='❌ Erro: '+err.message;console.error(err);}
+  };
+  reader.readAsArrayBuffer(file);
+}
 async function loadEstoqueFromDB(){
   try{
     var deps=['amora_rs','boeng'];
