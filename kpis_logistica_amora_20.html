@@ -6,6 +6,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -986,7 +987,11 @@ async function uploadEstoque(event,deposito){
   var cardEl=document.getElementById(statusId);if(cardEl)cardEl.closest('.est-upload-card').querySelector('.est-upload-hint').textContent='Processando...';
   var reader=new FileReader();
   reader.onload=async function(e){
-    var text=e.target.result.replace(/^﻿/,'');
+    var arr=new Uint8Array(e.target.result);
+    var wb2=XLSX.read(arr,{type:'array',cellDates:true,dateNF:'dd/mm/yyyy'});
+    var ws2=wb2.Sheets[wb2.SheetNames[0]];
+    var aoa2=XLSX.utils.sheet_to_json(ws2,{header:1,raw:false,defval:'',dateNF:'dd/mm/yyyy'});
+    var text=aoa2.map(function(r){return r.join('\t');}).join('\n');
     var lines=text.split(/\r?\n/).filter(function(l){return l.trim().length>0;});
     if(lines.length<2){alert('Arquivo vazio ou sem dados.');return;}
     var firstLine=lines[0];
@@ -1003,9 +1008,10 @@ async function uploadEstoque(event,deposito){
     for(var i=1;i<lines.length;i++){
       var f=lines[i].split(delim).map(function(c){return c.replace(/"/g,'').trim();});
       if(!f[iCod>0?iCod:0])continue;
-      var qty=parseFloat((iQtd>=0?f[iQtd]:'0').replace(',','.'))||0;
-      var custo=parseFloat((iCusto>=0?f[iCusto]:'0').replace(/[R$\s]/g,'').replace(',','.'))||0;
-      var ctotal=parseFloat((iTotal>=0?f[iTotal]:'0').replace(/[R$\s]/g,'').replace(',','.'))||custo*qty;
+      function pn(s){return parseFloat((s||'0').replace(/[R$\s]/g,'').replace(/\.(?=\d{3})/g,'').replace(',','.'))||0;}
+      var qty=pn(iQtd>=0?f[iQtd]:'0');
+      var custo=pn(iCusto>=0?f[iCusto]:'0');
+      var ctotal=pn(iTotal>=0?f[iTotal]:'0')||custo*qty;
       itens.push({codigo:iCod>=0?f[iCod]:'',nome:iNome>=0?f[iNome]:'',quantidade:qty,unidade:iUnd>=0?f[iUnd]:'',custo:custo,custo_total:ctotal});
       totalItens++;if(qty<=0)rupturas++;valorTotal+=ctotal;
     }
@@ -1014,7 +1020,7 @@ async function uploadEstoque(event,deposito){
     try{await sb.from('estoque_snapshot').upsert(payload,{onConflict:'deposito,data_ref'});}catch(err){console.warn('estoque save:',err);}
     estoqueDeposito=deposito;renderSecao('estoque');
   };
-  reader.readAsText(file,'UTF-8');
+  reader.readAsArrayBuffer(file);
 }
 // ANALYTICS BLOCK
 function buildAnalyticsBlock(prefix,cor,bg){
@@ -1106,7 +1112,11 @@ function importarArquivo(event,prefix,colPessoa){
   var statusEl=document.getElementById(prefix+'_imp_status');if(statusEl)statusEl.textContent='Lendo arquivo...';
   var reader=new FileReader();
   reader.onload=function(e){
-    var text=e.target.result;text=text.replace(/^﻿/,'');
+    var arr=new Uint8Array(e.target.result);
+    var wb2=XLSX.read(arr,{type:'array',cellDates:true,dateNF:'dd/mm/yyyy'});
+    var ws2=wb2.Sheets[wb2.SheetNames[0]];
+    var aoa2=XLSX.utils.sheet_to_json(ws2,{header:1,raw:false,defval:'',dateNF:'dd/mm/yyyy'});
+    var text=aoa2.map(function(r){return r.join('\t');}).join('\n');
     var lines=text.split(/\r?\n/).filter(function(l){return l.trim().length>0;});
     if(lines.length<2){if(statusEl)statusEl.textContent='Arquivo vazio.';return;}
     // ── Detectar relatório de tempo Amora ──────────────────────────────────
@@ -1188,7 +1198,7 @@ function importarArquivo(event,prefix,colPessoa){
     renderSecao(ativo);
     setTimeout(function(){if(prefix==='sep')rankBy(['sep_ana','sep_gabriel','sep_isabela','sep_joana']);if(prefix==='conf')rankBy(['conf_cassiele','conf_rebeka']);},100);
   };
-  reader.readAsText(file,'UTF-8');
+  reader.readAsArrayBuffer(file);
 }
 function setField(id,val){V[id]=val;var el=document.getElementById('inp_'+id);if(el)el.value=val;}
 function limparImport(prefix){V[prefix+'_rows']=null;['_tmed_calc','_itens_total','_prod_total','_valor_total','_faixa_rapido','_faixa_normal','_faixa_lento','_turno1','_turno2','_top5','_pessoa'].forEach(function(k){delete V[prefix+k];});var statusEl=document.getElementById(prefix+'_imp_status');if(statusEl)statusEl.textContent='Nenhum arquivo selecionado';agendarSalvar();renderSecao(ativo);}
