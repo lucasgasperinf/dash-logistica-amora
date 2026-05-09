@@ -1123,21 +1123,24 @@ function importarArquivo(event,prefix,colPessoa){
       var iDtV=ci2(['data venda']),iHrV=ci2(['hora venda']);
       var iItens=ci2(['itens']),iProds=ci2(['produtos']),iTotal=ci2(['total']);
       var iTempo=ci2(['tempo']);
+      function parsePtBR(s){return parseFloat((s||'').replace(/R\$\s*/,'').replace(/\./g,'').replace(',','.'))||0;}
       var rows2=[];
       for(var ii=4;ii<lines.length;ii++){
         var ff=lines[ii].split(d2).map(function(c){return c.replace(/"/g,'').trim();});
-        if(!ff[iCod2])continue;
-        var tempoVal=iTempo>=0?parseFloat(ff[iTempo].replace(',','.'))||0:0;
-        var itensVal=iItens>=0?parseFloat(ff[iItens].replace(',','.'))||0:0;
-        var prodsVal=iProds>=0?parseFloat(ff[iProds].replace(',','.'))||0:0;
-        rows2.push({codigo:ff[iCod2]||'',data:iDtV>=0?ff[iDtV]:'',hora:iHrV>=0?ff[iHrV]:'',tempo:tempoVal,itens:itensVal,produtos:prodsVal,total:iTotal>=0?ff[iTotal]:''});
+        var cod2=ff[iCod2]||'';
+        // Pular linhas de rodapé do ERP (ex: "Totais Geral", "Vendas", ...) — somente código numérico é dado real
+        if(!cod2||!/^\d+$/.test(cod2))continue;
+        var tempoVal=iTempo>=0?parsePtBR(ff[iTempo]):0;
+        var itensVal=iItens>=0?parsePtBR(ff[iItens]):0;
+        var prodsVal=iProds>=0?parsePtBR(ff[iProds]):0;
+        rows2.push({codigo:cod2,data:iDtV>=0?ff[iDtV]:'',hora:iHrV>=0?ff[iHrV]:'',tempo:tempoVal,itens:itensVal,produtos:prodsVal,total:iTotal>=0?ff[iTotal]:''});
       }
       // ── Calcular indicadores ──
       var tempos2=rows2.map(function(r){return r.tempo;}).filter(function(t){return t>0;});
       var tmedCalc=tempos2.length>0?tempos2.reduce(function(a,b){return a+b;},0)/tempos2.length:0;
       var itensTotal2=rows2.reduce(function(s,r){return s+r.itens;},0);
       var prodTotal2=rows2.reduce(function(s,r){return s+r.produtos;},0);
-      var valorTotal2=rows2.reduce(function(s,r){var v=parseFloat((r.total||'').replace(/\./g,'').replace(',','.'))||0;return s+v;},0);
+      var valorTotal2=rows2.reduce(function(s,r){return s+parsePtBR(r.total);},0);
       var rapido2=rows2.filter(function(r){return r.tempo>0&&r.tempo<5;}).length;
       var normal2=rows2.filter(function(r){return r.tempo>=5&&r.tempo<=15;}).length;
       var lento2=rows2.filter(function(r){return r.tempo>15;}).length;
