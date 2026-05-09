@@ -249,7 +249,7 @@ var timerSalvar=null,_logPrev={},_logTimer={};
 var histLogs=[],histFiltroSecao='',histFiltroData='';
 var kaBadge=0,ocBadge=0;
 var estoqueDeposito='amora_rs',estoqueItens={amora_rs:[],boeng:[]},estoqueInfo={amora_rs:{},boeng:{}};
-var estoqueFiltro='';
+var estoqueFiltro='',estoqueMarca='',estoqueApRuptura=false,estoqueOrdem='nome';
 var SECOES_DIARIAS=['recebimento','separacao','conferencia','expedicao','equipe','organizacao'];
 var SECOES=[
   {id:'visao',nome:'Visão Geral',icone:'📊',grupo:'Operações'},
@@ -382,7 +382,7 @@ async function carregarDados(data){
   try{var r=await sb.from('daily_records').select('data').eq('date',data).eq('user_id',usuarioAtual.id).maybeSingle();V=(r.data&&r.data.data)?r.data.data:{};}
   catch(e){V={};}
   setSyncState('ok');
-  if(SECOES_DIARIAS.indexOf(ativo)!==-1||ativo==='visao')renderSecao(ativo);
+  renderSecao(ativo);
 }
 // LOG
 var NOMES_CAMPOS={rec_chegada:'Hora chegada nota',rec_envio:'Hora envio aprovação',rec_devolutiva:'Hora devolutiva Compras',rec_armazen:'Hora finalização armazenagem',sep_hora:'Pedidos/hora',sep_t1:'Pedidos Turno 1',sep_t2:'Pedidos Turno 2',sep_dia:'Total separado no dia',sep_tmed:'Tempo médio separação',sep_altera:'Pedidos com alteração',sep_ana:'Ana Paula — pedidos',sep_gabriel:'Gabriel — pedidos',sep_isabela:'Isabela — pedidos',sep_joana:'Joanna — pedidos',conf_hora:'Pedidos conferidos/hora',conf_t1:'Pedidos Turno 1',conf_t2:'Pedidos Turno 2',conf_dia:'Total conferido no dia',conf_tmed:'Tempo médio conferência',conf_erro:'Pedidos com erro',conf_cassiele:'Cassiele — pedidos',conf_rebeka:'Rebeca — pedidos',exp_hora:'Notas/hora',exp_t1:'Notas Turno 1',exp_t2:'Notas Turno 2',exp_dia:'Total notas no dia',exp_saomiguel:'São Miguel — notas',exp_boeng:'Boeng — notas',exp_azul:'Azul — notas',exp_rodonaves:'Rodonaves — notas',exp_troca:'Troca — notas',exp_sapiranga:'Rápido Sapiranga — notas',exp_soft:'Soft — notas'};
@@ -492,6 +492,7 @@ function renderSeparacao(){
   var kpis=[{id:'sep_hora',nome:'Pedidos separados por hora',unidade:'ped/h',tipo:'Produtividade'},{id:'sep_t1',nome:'Pedidos — Turno 1',unidade:'pedidos',tipo:'Turno'},{id:'sep_t2',nome:'Pedidos — Turno 2',unidade:'pedidos',tipo:'Turno'},{id:'sep_dia',nome:'Total separado no dia',unidade:'pedidos',tipo:'Volume'},{id:'sep_tmed',nome:'Tempo médio de separação',unidade:'min/ped',tipo:'Tempo'},{id:'sep_altera',nome:'Pedidos com alteração (item faltante)',unidade:'pedidos',tipo:'Qualidade'}];
   var seps=[{id:'sep_ana',nome:'Ana Paula'},{id:'sep_gabriel',nome:'Gabriel'},{id:'sep_isabela',nome:'Isabela'},{id:'sep_joana',nome:'Joanna'}];
   var html='<div class="sec-header"><div class="sec-title">🗂️ <em>Separação</em></div><div class="sec-sub">Volume, produtividade e ranking de separadores</div></div>';
+  html+=buildAnalyticsBlock('sep',cor,bg);
   html+='<div class="sec-label" style="--slc:'+cor+'">Volume & produtividade</div><div class="kpi-grid">';
   kpis.forEach(function(k){html+='<div class="kpi-card" style="--ktc:'+cor+'"><div class="kpi-tipo">'+k.tipo+'</div><div class="kpi-nome">'+k.nome+'</div><input type="number" min="0" placeholder="—" id="inp_'+k.id+'" value="'+(V[k.id]||'')+'" oninput="updSep(this)"><div class="kpi-unit">'+k.unidade+'</div></div>';});
   html+='</div><div class="setor-title" style="--stc:'+cor+'">🏆 Ranking — quem mais separou</div><div class="rank-grid">';
@@ -505,7 +506,6 @@ function renderSeparacao(){
   html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:1.1rem;">';
   html+='<div class="kpi-card" style="--ktc:'+cor+';text-align:center;"><div class="kpi-tipo">% de faltas no dia</div><div style="font-family:var(--ff);font-size:38px;font-weight:500;color:'+semCor+';margin:8px 0;" id="sep_pct_val">'+pctStr+'</div><div style="font-size:12px;font-weight:600;color:'+semCor+';padding:4px 13px;background:'+semBg+';border-radius:99px;display:inline-block;" id="sep_pct_label">'+(pct===null?'—':pct<=3?'✅ Ótimo':pct<=5?'⚠️ Atenção':'❌ Fora da meta')+'</div><p class="alerta-box" style="margin-top:10px;">🟢 1–3% ótimo &nbsp;·&nbsp; 🟡 4–5% atenção &nbsp;·&nbsp; 🔴 6%+ fora</p></div>';
   html+='<div class="kpi-card" style="--ktc:'+cor+';"><div class="kpi-tipo">Como é calculado</div><div style="font-size:12px;color:var(--i);opacity:.75;line-height:1.8;margin-top:6px;"><strong>Pedidos com falta</strong> ÷ <strong>Total separado</strong> × 100</div></div></div>';
-  html+=buildAnalyticsBlock('sep',cor,bg);
   html+=buildImportBtn('sep',cor,bg,'Separador');html+=buildImportTable('sep',cor,bg);
   return html;
 }
@@ -515,6 +515,7 @@ function renderConferencia(){
   var kpis=[{id:'conf_hora',nome:'Pedidos conferidos por hora',unidade:'ped/h',tipo:'Produtividade'},{id:'conf_t1',nome:'Pedidos — Turno 1',unidade:'pedidos',tipo:'Turno'},{id:'conf_t2',nome:'Pedidos — Turno 2',unidade:'pedidos',tipo:'Turno'},{id:'conf_dia',nome:'Total conferido no dia',unidade:'pedidos',tipo:'Volume'},{id:'conf_tmed',nome:'Tempo médio de conferência',unidade:'min/ped',tipo:'Tempo'},{id:'conf_erro',nome:'Pedidos com erro (retrabalho)',unidade:'pedidos',tipo:'Qualidade'}];
   var confs=[{id:'conf_cassiele',nome:'Cassiele'},{id:'conf_rebeka',nome:'Rebeca'}];
   var html='<div class="sec-header"><div class="sec-title">✅ <em>Conferência</em></div><div class="sec-sub">Volume, produtividade e ranking de conferentes</div></div>';
+  html+=buildAnalyticsBlock('conf',cor,bg);
   html+='<div class="sec-label" style="--slc:'+cor+'">Volume & produtividade</div><div class="kpi-grid">';
   kpis.forEach(function(k){html+='<div class="kpi-card" style="--ktc:'+cor+'"><div class="kpi-tipo">'+k.tipo+'</div><div class="kpi-nome">'+k.nome+'</div><input type="number" min="0" placeholder="—" id="inp_'+k.id+'" value="'+(V[k.id]||'')+'" oninput="updConf(this)"><div class="kpi-unit">'+k.unidade+'</div></div>';});
   html+='</div><div class="setor-title" style="--stc:'+cor+'">🏆 Ranking — quem mais conferiu</div><div class="rank-grid" style="max-width:380px;">';
@@ -528,7 +529,6 @@ function renderConferencia(){
   html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:1.1rem;">';
   html+='<div class="kpi-card" style="--ktc:'+cor+';text-align:center;"><div class="kpi-tipo">% de erros no dia</div><div style="font-family:var(--ff);font-size:38px;font-weight:500;color:'+semCor+';margin:8px 0;" id="conf_pct_val">'+pctStr+'</div><div style="font-size:12px;font-weight:600;color:'+semCor+';padding:4px 13px;background:'+semBg+';border-radius:99px;display:inline-block;" id="conf_pct_label">'+(pct===null?'—':pct<=3?'✅ Ótimo':pct<=5?'⚠️ Atenção':'❌ Fora da meta')+'</div><p class="alerta-box" style="margin-top:10px;">🟢 1–3% ótimo &nbsp;·&nbsp; 🟡 4–5% atenção &nbsp;·&nbsp; 🔴 6%+ fora</p></div>';
   html+='<div class="kpi-card" style="--ktc:'+cor+';"><div class="kpi-tipo">Como é calculado</div><div style="font-size:12px;color:var(--i);opacity:.75;line-height:1.8;margin-top:6px;"><strong>Pedidos com erro</strong> ÷ <strong>Total conferido</strong> × 100</div></div></div>';
-  html+=buildAnalyticsBlock('conf',cor,bg);
   html+=buildImportBtn('conf',cor,bg,'Conferente');html+=buildImportTable('conf',cor,bg);
   return html;
 }
@@ -915,6 +915,7 @@ async function deletarKa(id){
   await sb.from('agendamentos_ka').delete().eq('id',id);loadKA();
 }
 // RENDER ESTOQUE
+function marcaItem(nome){var p=(nome||'').split(' - ');return p[0].replace(/^\[.*?\]\s*/,'').trim();}
 function renderEstoque(){
   var totalAmora=estoqueItens.amora_rs.length,totalBoeng=estoqueItens.boeng.length;
   var rupturaAmora=estoqueItens.amora_rs.filter(function(i){return parseFloat(i.quantidade||0)<=0;}).length;
@@ -940,14 +941,46 @@ function renderEstoque(){
   var itensAtivos=estoqueItens[estoqueDeposito]||[];
   if(itensAtivos.length){
     html+='<div class="est-tabs">';
-    html+='<button class="est-tab'+(estoqueDeposito==='amora_rs'?' active':'')+'" onclick="estoqueDeposito=\'amora_rs\';renderSecao(\'estoque\')">🏢 Amora RS ('+totalAmora+')</button>';
-    html+='<button class="est-tab'+(estoqueDeposito==='boeng'?' active':'')+'" onclick="estoqueDeposito=\'boeng\';renderSecao(\'estoque\')">🏬 Boeng ('+totalBoeng+')</button>';
+    html+='<button class="est-tab'+(estoqueDeposito==='amora_rs'?' active':'')+'" onclick="estoqueDeposito=\'amora_rs\';estoqueMarca=\'\';renderSecao(\'estoque\')">🏢 Amora RS ('+totalAmora+')</button>';
+    html+='<button class="est-tab'+(estoqueDeposito==='boeng'?' active':'')+'" onclick="estoqueDeposito=\'boeng\';estoqueMarca=\'\';renderSecao(\'estoque\')">🏬 Boeng ('+totalBoeng+')</button>';
     html+='</div>';
-    html+='<input class="est-search" type="text" placeholder="Buscar produto..." id="est-busca" oninput="filtrarEstoque(this.value)" value="'+estoqueFiltro+'">';
-    var filtrados=estoqueFiltro?itensAtivos.filter(function(i){return (i.nome||'').toLowerCase().includes(estoqueFiltro.toLowerCase())||(i.codigo||'').includes(estoqueFiltro);}):itensAtivos;
+    // ── Extrair marcas únicas ──
+    var marcas=[];itensAtivos.forEach(function(i){var m=marcaItem(i.nome);if(m&&marcas.indexOf(m)===-1)marcas.push(m);});marcas.sort();
+    // ── Barra de filtros ──
+    html+='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:center;">';
+    html+='<input class="est-search" type="text" placeholder="🔍 Buscar produto ou código..." id="est-busca" oninput="filtrarEstoque(this.value)" value="'+estoqueFiltro+'" style="flex:1;min-width:200px;margin:0;">';
+    html+='<select onchange="estoqueMarca=this.value;renderSecao(\'estoque\')" style="padding:8px 12px;border:1px solid var(--bd);border-radius:8px;font-size:13px;background:var(--w);color:var(--ch);cursor:pointer;">';
+    html+='<option value=""'+(estoqueMarca===''?' selected':'')+'>🏷️ Todas as marcas</option>';
+    marcas.forEach(function(m){html+='<option value="'+m+'"'+(estoqueMarca===m?' selected':'')+'>'+m+'</option>';});
+    html+='</select>';
+    html+='<select onchange="estoqueOrdem=this.value;renderSecao(\'estoque\')" style="padding:8px 12px;border:1px solid var(--bd);border-radius:8px;font-size:13px;background:var(--w);color:var(--ch);cursor:pointer;">';
+    [['nome','📝 Nome A→Z'],['codigo','🔢 Código'],['qty_desc','📦 Maior qtde'],['qty_asc','📦 Menor qtde'],['valor_desc','💰 Maior valor'],['valor_asc','💰 Menor valor']].forEach(function(o){html+='<option value="'+o[0]+'"'+(estoqueOrdem===o[0]?' selected':'')+'>'+o[1]+'</option>';});
+    html+='</select>';
+    html+='<button onclick="estoqueApRuptura=!estoqueApRuptura;renderSecao(\'estoque\')" style="padding:8px 14px;border-radius:8px;border:2px solid '+(estoqueApRuptura?'var(--alert)':'var(--bd)')+';background:'+(estoqueApRuptura?'#FCEBEB':'var(--w)')+';color:'+(estoqueApRuptura?'var(--alert)':'var(--i)')+';font-size:13px;font-weight:600;cursor:pointer;">🔴 Só ruptura</button>';
+    html+='</div>';
+    // ── Aplicar filtros ──
+    var filtrados=itensAtivos.slice();
+    if(estoqueFiltro)filtrados=filtrados.filter(function(i){return(i.nome||'').toLowerCase().indexOf(estoqueFiltro.toLowerCase())!==-1||(i.codigo||'').indexOf(estoqueFiltro)!==-1;});
+    if(estoqueMarca)filtrados=filtrados.filter(function(i){return marcaItem(i.nome)===estoqueMarca;});
+    if(estoqueApRuptura)filtrados=filtrados.filter(function(i){return parseFloat(i.quantidade||0)<=0;});
+    // ── Ordenar ──
+    if(estoqueOrdem==='nome')filtrados.sort(function(a,b){return(a.nome||'').localeCompare(b.nome||'','pt-BR');});
+    else if(estoqueOrdem==='codigo')filtrados.sort(function(a,b){return(a.codigo||'').localeCompare(b.codigo||'');});
+    else if(estoqueOrdem==='qty_desc')filtrados.sort(function(a,b){return parseFloat(b.quantidade||0)-parseFloat(a.quantidade||0);});
+    else if(estoqueOrdem==='qty_asc')filtrados.sort(function(a,b){return parseFloat(a.quantidade||0)-parseFloat(b.quantidade||0);});
+    else if(estoqueOrdem==='valor_desc')filtrados.sort(function(a,b){return parseFloat(b.custo_total||0)-parseFloat(a.custo_total||0);});
+    else if(estoqueOrdem==='valor_asc')filtrados.sort(function(a,b){return parseFloat(a.custo_total||0)-parseFloat(b.custo_total||0);});
+    // ── Resumo dos filtros ──
+    var totalFiltradoValor=filtrados.reduce(function(s,i){return s+parseFloat(i.custo_total||0);},0);
+    var rupFiltrado=filtrados.filter(function(i){return parseFloat(i.quantidade||0)<=0;}).length;
+    html+='<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--i);opacity:.8;">';
+    html+='<span>📋 <strong>'+filtrados.length+'</strong> itens</span>';
+    html+='<span>🔴 <strong>'+rupFiltrado+'</strong> em ruptura</span>';
+    html+='<span>💰 <strong>R$ '+totalFiltradoValor.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})+'</strong> em estoque</span>';
+    html+='</div>';
     html+='<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--bd);box-shadow:var(--sh);">';
     html+='<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>';
-    ['Código','Nome','Qtde','Unidade','Custo Un.','Total'].forEach(function(h,i){html+='<th style="padding:8px 10px;background:var(--v);color:#fff;font-size:10px;letter-spacing:.06em;font-weight:600;text-align:'+(i>1?'right':'left')+(i===0?';border-radius:8px 0 0 0':i===5?';border-radius:0 8px 0 0':'')+'">'+h+'</th>';});
+    ['Código','Nome','Marca','Qtde','Unidade','Custo Un.','Total'].forEach(function(h,i){html+='<th style="padding:8px 10px;background:var(--v);color:#fff;font-size:10px;letter-spacing:.06em;font-weight:600;text-align:'+(i>2?'right':'left')+(i===0?';border-radius:8px 0 0 0':i===6?';border-radius:0 8px 0 0':'')+'">'+h+'</th>';});
     html+='</tr></thead><tbody>';
     filtrados.slice(0,300).forEach(function(r,idx){
       var qty=parseFloat(r.quantidade||0);
@@ -955,13 +988,14 @@ function renderEstoque(){
       html+='<tr style="background:'+rowBg+';border-bottom:.5px solid var(--bd);">';
       html+='<td style="padding:6px 10px;font-weight:600;font-family:var(--fm);">'+(r.codigo||'')+'</td>';
       html+='<td style="padding:6px 10px;">'+(r.nome||'')+'</td>';
-      html+='<td style="padding:6px 10px;text-align:right;font-weight:600;color:'+(qty<=0?'var(--alert)':'var(--ch)')+';">'+qty+'</td>';
+      html+='<td style="padding:6px 10px;font-size:11px;color:var(--i);opacity:.8;">'+marcaItem(r.nome)+'</td>';
+      html+='<td style="padding:6px 10px;text-align:right;font-weight:700;color:'+(qty<=0?'var(--alert)':'var(--ch)')+';">'+qty+'</td>';
       html+='<td style="padding:6px 10px;text-align:right;opacity:.7;">'+(r.unidade||'')+'</td>';
       html+='<td style="padding:6px 10px;text-align:right;">R$ '+(parseFloat(r.custo||0)).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
       html+='<td style="padding:6px 10px;text-align:right;font-weight:600;">R$ '+(parseFloat(r.custo_total||0)).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
       html+='</tr>';
     });
-    if(filtrados.length>300)html+='<tr><td colspan="6" style="padding:10px;text-align:center;font-size:11px;opacity:.5;">Mostrando 300 de '+filtrados.length+' itens. Use a busca para filtrar.</td></tr>';
+    if(filtrados.length>300)html+='<tr><td colspan="7" style="padding:10px;text-align:center;font-size:11px;opacity:.5;">Mostrando 300 de '+filtrados.length+' itens. Use a busca para refinar.</td></tr>';
     html+='</tbody></table></div>';
   }else{
     html+='<div class="hist-vazio" style="margin-top:16px;">Nenhum dado de estoque carregado. Faça upload de uma planilha para começar.</div>';
@@ -970,6 +1004,8 @@ function renderEstoque(){
   return html;
 }
 function filtrarEstoque(v){estoqueFiltro=v;renderSecao('estoque');}
+function filtrarEstoqueMarca(v){estoqueMarca=v;renderSecao('estoque');}
+function ordenarEstoque(v){estoqueOrdem=v;renderSecao('estoque');}
 async function loadEstoqueFromDB(){
   try{
     var deps=['amora_rs','boeng'];
