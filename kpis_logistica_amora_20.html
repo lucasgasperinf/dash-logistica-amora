@@ -1081,14 +1081,14 @@ function renderCompras(){
   html+='<div class="import-area">';
   html+='<label class="btn-imp" style="background:'+cor+';color:#fff;">📁 Vendas por Item<input type="file" accept=".xls,.xlsx,.csv" style="display:none;" onchange="importarVendas(event)"></label>';
   html+='<span id="compras_imp_status" style="font-size:12px;color:var(--i);opacity:.6;">'+(V['compras_rows']&&V['compras_rows'].length?'✓ '+V['compras_rows'].length+' SKUs':'Nenhum arquivo')+'</span>';
-  if(V['compras_rows']&&V['compras_rows'].length)html+='<button class="btn-limpar" onclick="V[\'compras_rows\']=null;agendarSalvar();renderSecao(\'compras\')">✕</button>';
+  if(V['compras_rows']&&V['compras_rows'].length)html+='<button class="btn-limpar" onclick="V[\'compras_rows\']=null;comprasSelecionados={};comprasQtdOverride={};comprasSoUrgentes=false;comprasFornecedor=\'\';comprasMarca=\'\';agendarSalvar();renderSecao(\'compras\')" title="Limpar dados e resetar filtros">✕</button>';
   html+='</div></div>';
   html+='<div>';
   html+='<div class="setor-title" style="--stc:#0F6E56">🏭 Itens por Fornecedor</div>';
   html+='<div class="import-area">';
   html+='<label class="btn-imp" style="background:#0F6E56;color:#fff;">📁 Fornecedores<input type="file" accept=".xls,.xlsx,.csv" style="display:none;" onchange="importarFornecedores(event)"></label>';
   html+='<span id="forn_imp_status" style="font-size:12px;color:var(--i);opacity:.6;">'+(V['forn_map']&&Object.keys(V['forn_map']||{}).length?'✓ '+Object.keys(V['forn_map']).length+' vínculos':'Nenhum arquivo')+'</span>';
-  if(V['forn_map']&&Object.keys(V['forn_map']||{}).length)html+='<button class="btn-limpar" onclick="V[\'forn_map\']=null;agendarSalvar();renderSecao(\'compras\')">✕</button>';
+  if(V['forn_map']&&Object.keys(V['forn_map']||{}).length)html+='<button class="btn-limpar" onclick="V[\'forn_map\']=null;agendarSalvar();renderSecao(\'compras\')" title="Limpar vínculos de fornecedor">✕</button>';
   html+='</div></div>';
   html+='</div>';
   var rows=V['compras_rows']||[];
@@ -1189,6 +1189,13 @@ function renderCompras(){
   var urgLabel=['🚨 Ruptura','🔴 Crítico','🟡 Atenção','✅ OK','⬜ S/ dado'];
   var urgCor=['#DC2626','#EA580C','#D97706','#16A34A','#9CA3AF'];
   var urgBg=['#FEF2F2','#FFF7ED','#FFFBEB','#F0FDF4','#F9FAFB'];
+  if(filtrados.length===0){
+    var motivoVazio='';
+    if(comprasSoUrgentes)motivoVazio='Nenhum item urgente com os filtros aplicados. <a href="#" onclick="comprasSoUrgentes=false;renderSecao(\'compras\');return false;" style="color:'+cor+';text-decoration:underline;">Desativar "Só urgentes"</a>';
+    else if(comprasFornecedor||comprasMarca)motivoVazio='Nenhum item encontrado para o filtro selecionado.';
+    else motivoVazio='Carregue os dados de vendas e estoque para ver os itens.';
+    html+='<tr><td colspan="12" style="padding:32px;text-align:center;color:#6B7280;font-size:13px;">'+motivoVazio+'</td></tr>';
+  }
   filtrados.slice(0,400).forEach(function(r,idx){
     var abc=r.abc||'C';
     var abcColor=abc==='A'?'#16A34A':abc==='B'?'#D97706':'#6B7280';
@@ -1521,9 +1528,16 @@ function imprimirOC(){
 function verHistoricoMensal(){
   var enriched=buildEnrichedCompras();
   if(!enriched.length){alert('Carregue os dados de vendas primeiro.');return;}
+  // Aplicar os mesmos filtros ativos na tabela
+  var base=enriched.slice();
+  if(comprasFornecedor)base=base.filter(function(r){return r.fornecedor===comprasFornecedor;});
+  if(comprasMarca)base=base.filter(function(r){return marcaItem(r.nome)===comprasMarca;});
+  if(!base.length){alert('Nenhum item para o filtro atual.');return;}
   var meses=[{n:'Jan',d:31},{n:'Fev',d:28},{n:'Mar',d:31},{n:'Abr',d:30},{n:'Mai',d:9}];
   var total=meses.reduce(function(s,m){return s+m.d;},0); // 129
-  var sorted=enriched.slice().sort(function(a,b){return b.preco_total-a.preco_total;});
+  var sorted=base.slice().sort(function(a,b){return b.preco_total-a.preco_total;});
+  // Título dinâmico
+  var tituloFiltro=comprasFornecedor?' — '+comprasFornecedor:(comprasMarca?' — '+comprasMarca:'');
   var body='<div style="font-size:11px;color:#666;margin-bottom:12px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;">📊 Estimativa baseada na velocidade média do período Jan–Mai 2026 (129 dias). Distribuição proporcional aos dias de cada mês.</div>';
   body+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>';
   body+='<th style="padding:7px 10px;background:#7C3AED;color:#fff;text-align:left;border-radius:8px 0 0 0;">Código</th>';
@@ -1548,7 +1562,7 @@ function verHistoricoMensal(){
   });
   body+='</tbody></table></div>';
   if(sorted.length>300)body+='<div style="padding:8px;text-align:center;font-size:11px;opacity:.5;">Mostrando 300 de '+sorted.length+'</div>';
-  openModal('📊 Histórico Mensal Estimado — Jan a Mai 2026',body,'<button onclick="closeModal()" style="padding:8px 20px;border-radius:8px;background:#7C3AED;color:#fff;border:none;cursor:pointer;font-weight:600;">Fechar</button>');
+  openModal('📊 Histórico Mensal Estimado — Jan a Mai 2026'+tituloFiltro,body,'<button onclick="closeModal()" style="padding:8px 20px;border-radius:8px;background:#7C3AED;color:#fff;border:none;cursor:pointer;font-weight:600;">Fechar</button>');
 }
 async function loadEstoqueFromDB(){
   try{
