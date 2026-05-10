@@ -251,7 +251,7 @@ var histLogs=[],histFiltroSecao='',histFiltroData='';
 var kaBadge=0,ocBadge=0;
 var estoqueDeposito='amora_rs',estoqueItens={amora_rs:[],boeng:[]},estoqueInfo={amora_rs:{},boeng:{}};
 var estoqueFiltro='',estoqueMarca='',estoqueApRuptura=false,estoqueOrdem='nome';
-var comprasMarca='',comprasOrdem='urgencia',comprasSoUrgentes=false,comprasDias=30;
+var comprasMarca='',comprasOrdem='urgencia',comprasSoUrgentes=false,comprasDias=30,comprasFornecedor='';
 var SECOES_DIARIAS=['recebimento','separacao','conferencia','expedicao','equipe','organizacao'];
 var SECOES=[
   {id:'visao',nome:'Visão Geral',icone:'📊',grupo:'Operações'},
@@ -1036,29 +1036,16 @@ function ordenarEstoque(v){estoqueOrdem=v;renderSecao('estoque');}
 // ══════════════════════════════════════════════════════════════
 // RENDER COMPRAS
 // ══════════════════════════════════════════════════════════════
-function renderCompras(){
-  var cor='#7C3AED',bg='#F5F3FF';
-  var html='<div class="sec-header"><div class="sec-title" style="--stc:'+cor+'">🛒 Compras</div><div class="sec-sub">Necessidade de reposição · Jan–Mai 2026</div></div>';
-  // ── Import ──
-  html+='<div class="setor-title" style="--stc:'+cor+'">📂 Importar histórico de vendas</div>';
-  html+='<div class="import-area">';
-  html+='<label class="btn-imp" style="background:'+cor+';color:#fff;">📁 Selecionar XLS de Vendas<input type="file" accept=".xls,.xlsx,.csv" style="display:none;" onchange="importarVendas(event)"></label>';
-  html+='<span id="compras_imp_status" style="font-size:12px;color:var(--i);opacity:.6;">'+(V['compras_rows']&&V['compras_rows'].length?'✓ '+V['compras_rows'].length+' produtos carregados':'Nenhum arquivo selecionado')+'</span>';
-  if(V['compras_rows']&&V['compras_rows'].length)html+='<button class="btn-limpar" onclick="V[\'compras_rows\']=null;agendarSalvar();renderSecao(\'compras\')">✕ Limpar</button>';
-  html+='</div>';
+function parseFornNome(s){var m=(s||'').match(/^\d+\s*-\s*(.+)/);return m?m[1].trim():(s||'').trim();}
+function buildEnrichedCompras(){
   var rows=V['compras_rows']||[];
-  if(!rows.length){
-    html+='<div class="hist-vazio" style="margin-top:16px;">Carregue o relatório <strong>Vendas por Item</strong> exportado do ERP para visualizar a análise de compras.</div>';
-    return html;
-  }
-  // ── Cruzar com estoque ──
+  if(!rows.length)return[];
+  var fornMap=V['forn_map']||{};
   var estAtual=estoqueItens[estoqueDeposito]||[];
   var estMap={},custoEstMap={};
   estAtual.forEach(function(i){estMap[i.codigo]=parseFloat(i.quantidade||0);custoEstMap[i.codigo]=parseFloat(i.custo||0);});
-  // Período: Jan 1 a Mai 9 = 129 dias
   var periodoDias=parseFloat(V['compras_periodo']||129);
   var meses=periodoDias/30.4;
-  // ── Enriquecer rows ──
   var enriched=rows.map(function(r){
     var qtdVendida=parseFloat(r.quantidade||0);
     var velMes=meses>0?qtdVendida/meses:0;
@@ -1069,29 +1056,62 @@ function renderCompras(){
     var urgencia=estoqueAtual===null?4:estoqueAtual<=0?0:diasEstoque<=30?1:diasEstoque<=60?2:3;
     var sugestao30=Math.max(0,Math.ceil(velMes*1-((estoqueAtual||0)>0?(estoqueAtual||0):0)));
     var sugestao60=Math.max(0,Math.ceil(velMes*2-((estoqueAtual||0)>0?(estoqueAtual||0):0)));
+    var fornecedor=parseFornNome(fornMap[r.codigo]||'');
     return {codigo:r.codigo,nome:r.nome,quantidade:qtdVendida,unidade:r.unidade,
       custo_total:parseFloat(r.custo_total||0),preco_total:parseFloat(r.preco_total||0),
       lucro_pct:parseFloat(r.lucro_pct||0),marg_pct:parseFloat(r.marg_pct||0),
       velMes:velMes,estoqueAtual:estoqueAtual,diasEstoque:diasEstoque,
-      custoUnit:custoUnit,urgencia:urgencia,sugestao30:sugestao30,sugestao60:sugestao60};
+      custoUnit:custoUnit,urgencia:urgencia,sugestao30:sugestao30,sugestao60:sugestao60,fornecedor:fornecedor};
   });
-  // ── ABC sobre vendas (por preço total) ──
   var abcSorted=enriched.slice().sort(function(a,b){return b.preco_total-a.preco_total;});
   var abcTot=abcSorted.reduce(function(s,r){return s+r.preco_total;},0);
   var abcAcum=0,abcMapC={};
   abcSorted.forEach(function(r){abcAcum+=r.preco_total;var p=abcTot>0?abcAcum/abcTot:1;abcMapC[r.codigo]=p<=0.8?'A':p<=0.95?'B':'C';});
   enriched.forEach(function(r){r.abc=abcMapC[r.codigo]||'C';});
-  // ── Filtros ──
+  return enriched;
+}
+function renderCompras(){
+  var cor='#7C3AED',bg='#F5F3FF';
+  var html='<div class="sec-header"><div class="sec-title" style="--stc:'+cor+'">🛒 Compras</div><div class="sec-sub">Necessidade de reposição · Jan–Mai 2026</div></div>';
+  // ── Imports ──
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px;">';
+  html+='<div>';
+  html+='<div class="setor-title" style="--stc:'+cor+'">📊 Histórico de Vendas</div>';
+  html+='<div class="import-area">';
+  html+='<label class="btn-imp" style="background:'+cor+';color:#fff;">📁 Vendas por Item<input type="file" accept=".xls,.xlsx,.csv" style="display:none;" onchange="importarVendas(event)"></label>';
+  html+='<span id="compras_imp_status" style="font-size:12px;color:var(--i);opacity:.6;">'+(V['compras_rows']&&V['compras_rows'].length?'✓ '+V['compras_rows'].length+' SKUs':'Nenhum arquivo')+'</span>';
+  if(V['compras_rows']&&V['compras_rows'].length)html+='<button class="btn-limpar" onclick="V[\'compras_rows\']=null;agendarSalvar();renderSecao(\'compras\')">✕</button>';
+  html+='</div></div>';
+  html+='<div>';
+  html+='<div class="setor-title" style="--stc:#0F6E56">🏭 Itens por Fornecedor</div>';
+  html+='<div class="import-area">';
+  html+='<label class="btn-imp" style="background:#0F6E56;color:#fff;">📁 Fornecedores<input type="file" accept=".xls,.xlsx,.csv" style="display:none;" onchange="importarFornecedores(event)"></label>';
+  html+='<span id="forn_imp_status" style="font-size:12px;color:var(--i);opacity:.6;">'+(V['forn_map']&&Object.keys(V['forn_map']||{}).length?'✓ '+Object.keys(V['forn_map']).length+' vínculos':'Nenhum arquivo')+'</span>';
+  if(V['forn_map']&&Object.keys(V['forn_map']||{}).length)html+='<button class="btn-limpar" onclick="V[\'forn_map\']=null;agendarSalvar();renderSecao(\'compras\')">✕</button>';
+  html+='</div></div>';
+  html+='</div>';
+  var rows=V['compras_rows']||[];
+  if(!rows.length){
+    html+='<div class="hist-vazio" style="margin-top:16px;">Carregue o relatório <strong>Vendas por Item</strong> exportado do ERP para visualizar a análise de compras.</div>';
+    return html;
+  }
+  var enriched=buildEnrichedCompras();
+  var periodoDias=parseFloat(V['compras_periodo']||129);
+  // ── Listas para filtros ──
   var marcasList=[];enriched.forEach(function(r){var m=marcaItem(r.nome);if(m&&marcasList.indexOf(m)===-1)marcasList.push(m);});marcasList.sort();
+  var fornList=[];enriched.forEach(function(r){if(r.fornecedor&&fornList.indexOf(r.fornecedor)===-1)fornList.push(r.fornecedor);});fornList.sort();
+  // ── Aplicar filtros ──
   var filtrados=enriched.slice();
   if(comprasMarca)filtrados=filtrados.filter(function(r){return marcaItem(r.nome)===comprasMarca;});
+  if(comprasFornecedor)filtrados=filtrados.filter(function(r){return r.fornecedor===comprasFornecedor;});
   if(comprasSoUrgentes)filtrados=filtrados.filter(function(r){return r.urgencia<=1;});
   // ── Ordenar ──
   if(comprasOrdem==='urgencia')filtrados.sort(function(a,b){return a.urgencia!==b.urgencia?a.urgencia-b.urgencia:b.preco_total-a.preco_total;});
   else if(comprasOrdem==='vel_desc')filtrados.sort(function(a,b){return b.velMes-a.velMes;});
-  else if(comprasOrdem==='dias_asc')filtrados.sort(function(a,b){return (a.diasEstoque===null?9999:a.diasEstoque)-(b.diasEstoque===null?9999:b.diasEstoque);});
+  else if(comprasOrdem==='dias_asc')filtrados.sort(function(a,b){return(a.diasEstoque===null?9999:a.diasEstoque)-(b.diasEstoque===null?9999:b.diasEstoque);});
   else if(comprasOrdem==='valor_desc')filtrados.sort(function(a,b){return b.preco_total-a.preco_total;});
   else if(comprasOrdem==='abc')filtrados.sort(function(a,b){return a.abc.localeCompare(b.abc)||b.preco_total-a.preco_total;});
+  else if(comprasOrdem==='forn')filtrados.sort(function(a,b){return(a.fornecedor||'').localeCompare(b.fornecedor||'','pt-BR')||a.urgencia-b.urgencia;});
   // ── Sumários ──
   var ruptura=enriched.filter(function(r){return r.urgencia===0;});
   var critico=enriched.filter(function(r){return r.urgencia===1;});
@@ -1100,53 +1120,62 @@ function renderCompras(){
   var semEstoque=enriched.filter(function(r){return r.urgencia===4;});
   var valorRepRuptura=ruptura.reduce(function(s,r){return s+(r.custoUnit*(r.sugestao30||Math.ceil(r.velMes)));},0);
   var valorRepCritico=critico.reduce(function(s,r){return s+r.custoUnit*r.sugestao30;},0);
-  // ── Cards de urgência ──
-  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px;">';
+  // ── Cards urgência ──
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;">';
   [{u:0,cor:'#DC2626',bg:'#FEF2F2',icone:'🚨',label:'Ruptura',sub:'Zerado e vendendo',cnt:ruptura.length,val:valorRepRuptura},
-   {u:1,cor:'#EA580C',bg:'#FFF7ED',icone:'🔴',label:'Crítico',sub:'< 30 dias estoque',cnt:critico.length,val:valorRepCritico},
-   {u:2,cor:'#D97706',bg:'#FFFBEB',icone:'🟡',label:'Atenção',sub:'30–60 dias estoque',cnt:atencao.length,val:null},
-   {u:3,cor:'#16A34A',bg:'#F0FDF4',icone:'✅',label:'OK',sub:'> 60 dias estoque',cnt:ok.length,val:null},
-   {u:4,cor:'#6B7280',bg:'#F9FAFB',icone:'📊',label:'Sem estoque atual',sub:'Não cruzado',cnt:semEstoque.length,val:null}
+   {u:1,cor:'#EA580C',bg:'#FFF7ED',icone:'🔴',label:'Crítico',sub:'< 30 dias',cnt:critico.length,val:valorRepCritico},
+   {u:2,cor:'#D97706',bg:'#FFFBEB',icone:'🟡',label:'Atenção',sub:'30–60 dias',cnt:atencao.length,val:null},
+   {u:3,cor:'#16A34A',bg:'#F0FDF4',icone:'✅',label:'OK',sub:'> 60 dias',cnt:ok.length,val:null},
+   {u:4,cor:'#6B7280',bg:'#F9FAFB',icone:'📊',label:'Sem estoque',sub:'Não cruzado',cnt:semEstoque.length,val:null}
   ].forEach(function(x){
-    html+='<div style="background:'+x.bg+';border:1.5px solid '+x.cor+'33;border-radius:12px;padding:12px 14px;cursor:pointer;" onclick="comprasSoUrgentes='+(x.u<=1?'true':'false')+';comprasOrdem=\'urgencia\';renderSecao(\'compras\')">';
-    html+='<div style="font-size:20px;">'+x.icone+'</div>';
-    html+='<div style="font-size:22px;font-weight:800;color:'+x.cor+';">'+x.cnt+'</div>';
-    html+='<div style="font-size:12px;font-weight:700;color:'+x.cor+';">'+x.label+'</div>';
-    html+='<div style="font-size:10px;color:#6B7280;margin-top:2px;">'+x.sub+'</div>';
-    if(x.val!==null)html+='<div style="font-size:11px;color:'+x.cor+';margin-top:4px;font-weight:600;">Repor ≈ R$ '+x.val.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})+'</div>';
+    html+='<div style="background:'+x.bg+';border:1.5px solid '+x.cor+'33;border-radius:12px;padding:10px 12px;cursor:pointer;" onclick="comprasSoUrgentes='+(x.u<=1?'true':'false')+';comprasOrdem=\'urgencia\';renderSecao(\'compras\')">';
+    html+='<div style="font-size:18px;">'+x.icone+'</div>';
+    html+='<div style="font-size:20px;font-weight:800;color:'+x.cor+';">'+x.cnt+'</div>';
+    html+='<div style="font-size:11px;font-weight:700;color:'+x.cor+';">'+x.label+'</div>';
+    html+='<div style="font-size:10px;color:#6B7280;margin-top:1px;">'+x.sub+'</div>';
+    if(x.val!==null)html+='<div style="font-size:10px;color:'+x.cor+';margin-top:3px;font-weight:600;">≈ R$ '+x.val.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})+'</div>';
     html+='</div>';
   });
   html+='</div>';
-  // ── Estatísticas gerais ──
+  // ── Stat cards ──
   var totalVendido=enriched.reduce(function(s,r){return s+r.preco_total;},0);
   var margemMedia=enriched.length>0?enriched.reduce(function(s,r){return s+r.marg_pct;},0)/enriched.length:0;
-  html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">';
-  [{l:'SKUs analisados',v:enriched.length+' produtos',c:'#7C3AED'},{l:'Período de vendas',v:periodoDias+' dias (Jan–Mai)',c:'#7C3AED'},
-   {l:'Faturamento total',v:'R$ '+totalVendido.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0}),c:'#16A34A'},
-   {l:'Margem média',v:margemMedia.toFixed(1)+'%',c:'#D97706'}].forEach(function(k){
-    html+='<div style="flex:1;min-width:140px;background:var(--n);border-radius:10px;padding:10px 14px;border:1px solid var(--bd);">';
-    html+='<div style="font-size:10px;color:var(--i);opacity:.7;margin-bottom:2px;">'+k.l+'</div>';
-    html+='<div style="font-size:16px;font-weight:700;color:'+k.c+';">'+k.v+'</div>';
+  html+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">';
+  [{l:'SKUs analisados',v:enriched.length+'',c:cor},{l:'Fornecedores',v:fornList.length||'—',c:'#0F6E56'},
+   {l:'Faturamento',v:'R$ '+totalVendido.toLocaleString('pt-BR',{maximumFractionDigits:0}),c:'#16A34A'},
+   {l:'Margem média',v:margemMedia.toFixed(1)+'%',c:'#D97706'},{l:'Período',v:periodoDias+'d (Jan–Mai)',c:'#6B7280'}].forEach(function(k){
+    html+='<div style="flex:1;min-width:120px;background:var(--n);border-radius:10px;padding:8px 12px;border:1px solid var(--bd);">';
+    html+='<div style="font-size:10px;color:var(--i);opacity:.7;margin-bottom:1px;">'+k.l+'</div>';
+    html+='<div style="font-size:15px;font-weight:700;color:'+k.c+';">'+k.v+'</div>';
     html+='</div>';
   });
   html+='</div>';
-  // ── Barra de filtros ──
-  html+='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:center;">';
-  html+='<select onchange="comprasMarca=this.value;renderSecao(\'compras\')" style="padding:8px 12px;border:1px solid var(--bd);border-radius:8px;font-size:13px;background:var(--w);color:var(--ch);cursor:pointer;">';
-  html+='<option value=""'+(comprasMarca===''?' selected':'')+'>🏷️ Todas as marcas</option>';
+  // ── Barra de filtros + botão OC ──
+  html+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center;">';
+  html+='<select onchange="comprasMarca=this.value;renderSecao(\'compras\')" style="padding:7px 10px;border:1px solid var(--bd);border-radius:8px;font-size:12px;background:var(--w);color:var(--ch);cursor:pointer;">';
+  html+='<option value="">🏷️ Marca</option>';
   marcasList.forEach(function(m){html+='<option value="'+m+'"'+(comprasMarca===m?' selected':'')+'>'+m+'</option>';});
   html+='</select>';
-  html+='<select onchange="comprasOrdem=this.value;renderSecao(\'compras\')" style="padding:8px 12px;border:1px solid var(--bd);border-radius:8px;font-size:13px;background:var(--w);color:var(--ch);cursor:pointer;">';
-  [['urgencia','🚨 Por urgência'],['vel_desc','🔥 Maior giro/mês'],['dias_asc','⏱️ Menos dias estoque'],['valor_desc','💰 Maior faturamento'],['abc','🅰️ Curva ABC']].forEach(function(o){html+='<option value="'+o[0]+'"'+(comprasOrdem===o[0]?' selected':'')+'>'+o[1]+'</option>';});
+  if(fornList.length){
+    html+='<select onchange="comprasFornecedor=this.value;renderSecao(\'compras\')" style="padding:7px 10px;border:1px solid var(--bd);border-radius:8px;font-size:12px;background:var(--w);color:var(--ch);cursor:pointer;max-width:260px;">';
+    html+='<option value=""'+(comprasFornecedor===''?' selected':'')+'>🏭 Todos os fornecedores</option>';
+    fornList.forEach(function(f){html+='<option value="'+f.replace(/"/g,'&quot;')+'"'+(comprasFornecedor===f?' selected':'')+'>'+f+'</option>';});
+    html+='</select>';
+  }
+  html+='<select onchange="comprasOrdem=this.value;renderSecao(\'compras\')" style="padding:7px 10px;border:1px solid var(--bd);border-radius:8px;font-size:12px;background:var(--w);color:var(--ch);cursor:pointer;">';
+  [['urgencia','🚨 Urgência'],['forn','🏭 Fornecedor'],['vel_desc','🔥 Maior giro'],['dias_asc','⏱️ Menos dias'],['valor_desc','💰 Faturamento'],['abc','🅰️ ABC']].forEach(function(o){html+='<option value="'+o[0]+'"'+(comprasOrdem===o[0]?' selected':'')+'>'+o[1]+'</option>';});
   html+='</select>';
-  html+='<button onclick="comprasSoUrgentes=!comprasSoUrgentes;renderSecao(\'compras\')" style="padding:8px 14px;border-radius:8px;border:2px solid '+(comprasSoUrgentes?'#DC2626':'var(--bd)')+';background:'+(comprasSoUrgentes?'#FEF2F2':'var(--w)')+';color:'+(comprasSoUrgentes?'#DC2626':'var(--i)')+';font-size:13px;font-weight:600;cursor:pointer;">🚨 Só urgentes</button>';
-  html+='<span style="font-size:12px;color:var(--i);opacity:.6;">'+filtrados.length+' de '+enriched.length+' produtos</span>';
+  html+='<button onclick="comprasSoUrgentes=!comprasSoUrgentes;renderSecao(\'compras\')" style="padding:7px 12px;border-radius:8px;border:2px solid '+(comprasSoUrgentes?'#DC2626':'var(--bd)')+';background:'+(comprasSoUrgentes?'#FEF2F2':'var(--w)')+';color:'+(comprasSoUrgentes?'#DC2626':'var(--i)')+';font-size:12px;font-weight:600;cursor:pointer;">🚨 Só urgentes</button>';
+  html+='<span style="font-size:11px;color:var(--i);opacity:.6;flex:1;">'+filtrados.length+' de '+enriched.length+'</span>';
+  // Botão Gerar OC
+  var ocForn=comprasFornecedor||'';
+  html+='<button onclick="gerarOC(\''+ocForn.replace(/'/g,"\\'")+'\')" style="padding:8px 16px;border-radius:8px;background:#7C3AED;color:#fff;font-size:13px;font-weight:700;border:none;cursor:pointer;box-shadow:0 2px 8px #7C3AED44;">📋 Gerar OC'+(ocForn?' — '+ocForn.split(' ')[0]:'')+'</button>';
   html+='</div>';
   // ── Tabela ──
   html+='<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--bd);box-shadow:var(--sh);">';
   html+='<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>';
   var thStyle='padding:8px 10px;background:'+cor+';color:#fff;font-size:10px;letter-spacing:.06em;font-weight:600;';
-  ['','ABC','Código','Produto','Marca','Vel./mês','Estq atual','Dias estq','Faturado','Margem','Repor 30d','Repor 60d'].forEach(function(h,i){
+  ['','ABC','Código','Produto','Fornecedor','Vel./mês','Estq atual','Dias estq','Faturado','Margem','Repor 30d','Repor 60d'].forEach(function(h,i){
     var align=i>=5?'text-align:right;':'text-align:left;';
     var rad=i===0?'border-radius:8px 0 0 0;':i===11?'border-radius:0 8px 0 0;':'';
     html+='<th style="'+thStyle+align+rad+'">'+h+'</th>';
@@ -1159,8 +1188,7 @@ function renderCompras(){
     var abc=r.abc||'C';
     var abcColor=abc==='A'?'#16A34A':abc==='B'?'#D97706':'#6B7280';
     var abcBg=abc==='A'?'#DCFCE7':abc==='B'?'#FEF3C7':'#F3F4F6';
-    var uc=urgCor[r.urgencia]||'#6B7280';
-    var ub=urgBg[r.urgencia]||'#F9FAFB';
+    var uc=urgCor[r.urgencia]||'#6B7280';var ub=urgBg[r.urgencia]||'#F9FAFB';
     var rowBg=r.urgencia===0?'#FFF5F5':idx%2===0?'var(--w)':'var(--n)';
     var diasTxt=r.diasEstoque===null?'—':r.diasEstoque===0?'<span style="color:#DC2626;font-weight:700;">0</span>':
       r.diasEstoque<=30?'<span style="color:#EA580C;font-weight:700;">'+r.diasEstoque+'d</span>':
@@ -1169,19 +1197,20 @@ function renderCompras(){
     var estTxt=r.estoqueAtual===null?'<span style="opacity:.4;">—</span>':
       r.estoqueAtual<=0?'<span style="color:#DC2626;font-weight:700;">0</span>':
       '<span style="font-weight:600;">'+r.estoqueAtual+'</span>';
+    var fornTxt=r.fornecedor?'<span style="font-size:10px;background:#EDE9FE;color:#5B21B6;padding:2px 6px;border-radius:8px;cursor:pointer;" onclick="comprasFornecedor=\''+r.fornecedor.replace(/'/g,"\\'")+'\';renderSecao(\'compras\')">'+r.fornecedor+'</span>':'<span style="opacity:.3;font-size:10px;">—</span>';
     html+='<tr style="background:'+rowBg+';border-bottom:.5px solid var(--bd);">';
     html+='<td style="padding:4px 8px;text-align:center;white-space:nowrap;"><span style="font-size:10px;font-weight:600;color:'+uc+';background:'+ub+';padding:2px 6px;border-radius:10px;">'+urgLabel[r.urgencia]+'</span></td>';
     html+='<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;width:20px;height:20px;line-height:20px;border-radius:50%;background:'+abcBg+';color:'+abcColor+';font-weight:800;font-size:10px;">'+abc+'</span></td>';
     html+='<td style="padding:6px 8px;font-weight:600;font-family:var(--fm);font-size:11px;">'+(r.codigo||'')+'</td>';
-    html+='<td style="padding:6px 8px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(r.nome||'')+'</td>';
-    html+='<td style="padding:6px 8px;font-size:11px;opacity:.8;">'+marcaItem(r.nome)+'</td>';
+    html+='<td style="padding:6px 8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+(r.nome||'')+'">'+(r.nome||'')+'</td>';
+    html+='<td style="padding:6px 8px;">'+fornTxt+'</td>';
     html+='<td style="padding:6px 8px;text-align:right;font-weight:700;">'+r.velMes.toFixed(1)+'<span style="font-size:10px;opacity:.5;">/mês</span></td>';
     html+='<td style="padding:6px 8px;text-align:right;">'+estTxt+'</td>';
     html+='<td style="padding:6px 8px;text-align:right;">'+diasTxt+'</td>';
-    html+='<td style="padding:6px 8px;text-align:right;">R$ '+r.preco_total.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})+'</td>';
+    html+='<td style="padding:6px 8px;text-align:right;">R$ '+r.preco_total.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</td>';
     html+='<td style="padding:6px 8px;text-align:right;color:'+(r.marg_pct>=20?'#16A34A':r.marg_pct>=10?'#D97706':'#DC2626')+';font-weight:600;">'+r.marg_pct.toFixed(1)+'%</td>';
     html+='<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+cor+';">'+(r.sugestao30>0?r.sugestao30+' '+r.unidade:'<span style="opacity:.3;">—</span>')+'</td>';
-    html+='<td style="padding:6px 8px;text-align:right;color:#7C3AED;opacity:.8;">'+(r.sugestao60>0?r.sugestao60+' '+r.unidade:'<span style="opacity:.3;">—</span>')+'</td>';
+    html+='<td style="padding:6px 8px;text-align:right;opacity:.8;">'+(r.sugestao60>0?r.sugestao60+' '+r.unidade:'<span style="opacity:.3;">—</span>')+'</td>';
     html+='</tr>';
   });
   if(filtrados.length>400)html+='<tr><td colspan="12" style="padding:10px;text-align:center;font-size:11px;opacity:.5;">Mostrando 400 de '+filtrados.length+'. Use filtros para refinar.</td></tr>';
@@ -1227,6 +1256,135 @@ function importarVendas(event){
     }catch(err){if(statusEl)statusEl.textContent='❌ Erro: '+err.message;console.error(err);}
   };
   reader.readAsArrayBuffer(file);
+}
+// ── Parser XLS Itens por Fornecedor ──
+function importarFornecedores(event){
+  var file=event.target.files[0];if(!file)return;
+  var statusEl=document.getElementById('forn_imp_status');if(statusEl)statusEl.textContent='Lendo arquivo...';
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var arr=new Uint8Array(e.target.result);
+      var wb=XLSX.read(arr,{type:'array'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+      // Detectar linha de header
+      var hIdx=0;
+      for(var i=0;i<Math.min(raw.length,5);i++){if((raw[i][0]||'').toString().toLowerCase().replace(/\s/g,'').indexOf('digo')!==-1){hIdx=i;break;}}
+      var headers=raw[hIdx].map(function(c){return(c||'').toString().toLowerCase().trim();});
+      function ci(names){for(var n=0;n<names.length;n++){var idx=headers.findIndex(function(h){return h.indexOf(names[n])!==-1;});if(idx!==-1)return idx;}return-1;}
+      var iCod=ci(['digo','cod']);if(iCod===-1)iCod=0;
+      var iForn=ci(['fornecedor','forn']);
+      var iData=ci(['data']);
+      // Construir map: codigo → {forn, data} — fica com o mais recente
+      var map={};
+      for(var i=hIdx+1;i<raw.length;i++){
+        var f=raw[i];
+        var cod=(f[iCod]||'').toString().trim();
+        if(!cod||!/^\d+$/.test(cod))continue;
+        var forn=iForn>=0?(f[iForn]||'').toString().trim():'';
+        var data=iData>=0?(f[iData]||'').toString().trim():'';
+        if(!map[cod]||data>map[cod].data)map[cod]={forn:forn,data:data};
+      }
+      // Salvar só o nome do fornecedor por código
+      var fornMap={};
+      Object.keys(map).forEach(function(cod){fornMap[cod]=map[cod].forn;});
+      V['forn_map']=fornMap;
+      var total=Object.keys(fornMap).length;
+      if(statusEl)statusEl.textContent='✓ '+total+' vínculos carregados';
+      agendarSalvar();renderSecao('compras');
+    }catch(err){if(statusEl)statusEl.textContent='❌ Erro: '+err.message;console.error(err);}
+  };
+  reader.readAsArrayBuffer(file);
+}
+// ── Gerar Ordem de Compra (nova janela / print) ──
+function gerarOC(fornecedorFiltro){
+  var enriched=buildEnrichedCompras();
+  if(!enriched.length){alert('Carregue os dados de vendas primeiro.');return;}
+  // Itens que precisam de compra: ruptura ou crítico, com sugestão > 0
+  var itens=enriched.filter(function(r){return r.urgencia<=1&&r.sugestao30>0;});
+  if(fornecedorFiltro)itens=itens.filter(function(r){return r.fornecedor===fornecedorFiltro;});
+  if(!itens.length){alert('Nenhum item urgente'+(fornecedorFiltro?' para este fornecedor':'')+'. Tudo OK!');return;}
+  // Agrupar por fornecedor
+  var grupos={},ordemForn=[];
+  itens.forEach(function(r){
+    var f=r.fornecedor||'Fornecedor não identificado';
+    if(!grupos[f]){grupos[f]=[];ordemForn.push(f);}
+    grupos[f].push(r);
+  });
+  ordemForn.sort();
+  var dataHoje=new Date().toLocaleDateString('pt-BR');
+  var ocNum='OC-'+new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')+String(new Date().getDate()).padStart(2,'0');
+  // ── Montar HTML da OC ──
+  var ocHtml='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ordem de Compra — Amora</title>';
+  ocHtml+='<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:12px;color:#111;background:#fff;}';
+  ocHtml+='.page{padding:24px 32px;max-width:900px;margin:0 auto;page-break-after:always;}';
+  ocHtml+='.page:last-child{page-break-after:avoid;}';
+  ocHtml+='.logo{font-size:18px;font-weight:800;color:#7C3AED;}';
+  ocHtml+='.sub{font-size:11px;color:#666;margin-top:2px;}';
+  ocHtml+='.oc-num{font-size:13px;font-weight:700;color:#7C3AED;text-align:right;}';
+  ocHtml+='.header-row{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #7C3AED;padding-bottom:12px;margin-bottom:16px;}';
+  ocHtml+='.forn-box{background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:10px 14px;margin-bottom:16px;}';
+  ocHtml+='.forn-label{font-size:10px;color:#7C3AED;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;}';
+  ocHtml+='.forn-nome{font-size:14px;font-weight:700;color:#111;}';
+  ocHtml+='table{width:100%;border-collapse:collapse;margin-bottom:10px;}';
+  ocHtml+='thead th{background:#7C3AED;color:#fff;padding:7px 10px;font-size:10px;letter-spacing:.06em;text-align:left;}';
+  ocHtml+='thead th.r{text-align:right;}';
+  ocHtml+='tbody tr:nth-child(even){background:#F5F3FF;}';
+  ocHtml+='tbody td{padding:6px 10px;border-bottom:1px solid #E5E7EB;font-size:11px;}';
+  ocHtml+='tbody td.r{text-align:right;}';
+  ocHtml+='.total-row{background:#EDE9FE!important;font-weight:700;}';
+  ocHtml+='.total-row td{padding:8px 10px;font-size:12px;}';
+  ocHtml+='.footer{margin-top:12px;font-size:10px;color:#9CA3AF;border-top:1px solid #E5E7EB;padding-top:8px;}';
+  ocHtml+='.urgente{color:#DC2626;font-weight:700;}';
+  ocHtml+='.critico{color:#EA580C;font-weight:600;}';
+  ocHtml+='@media print{.no-print{display:none!important;}.page{padding:16px;}body{font-size:11px;}}';
+  ocHtml+='</style></head><body>';
+  // Botão imprimir (some no print)
+  ocHtml+='<div class="no-print" style="background:#7C3AED;color:#fff;padding:10px 20px;display:flex;gap:16px;align-items:center;position:sticky;top:0;z-index:99;">';
+  ocHtml+='<span style="font-weight:700;font-size:14px;">📋 Amora — Ordens de Compra</span>';
+  ocHtml+='<span style="flex:1;font-size:12px;opacity:.7;">'+ordemForn.length+' fornecedor(es) · '+itens.length+' itens</span>';
+  ocHtml+='<button onclick="window.print()" style="background:#fff;color:#7C3AED;border:none;padding:8px 20px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">🖨️ Imprimir / Salvar PDF</button>';
+  ocHtml+='<button onclick="window.close()" style="background:transparent;color:#fff;border:1px solid #fff6;padding:8px 14px;border-radius:8px;font-size:12px;cursor:pointer;">✕ Fechar</button>';
+  ocHtml+='</div>';
+  // Uma página por fornecedor
+  ordemForn.forEach(function(forn,fi){
+    var itF=grupos[forn];
+    itF.sort(function(a,b){return a.urgencia-b.urgencia||b.preco_total-a.preco_total;});
+    var totalEst=itF.reduce(function(s,r){return s+r.custoUnit*r.sugestao30;},0);
+    ocHtml+='<div class="page">';
+    ocHtml+='<div class="header-row">';
+    ocHtml+='<div><div class="logo">AMORA DISTRIBUIDORA</div><div class="sub">Ordem de Compra · Emitida em '+dataHoje+'</div></div>';
+    ocHtml+='<div><div class="oc-num">'+ocNum+(ordemForn.length>1?'-'+(fi+1):'')+'</div><div style="font-size:10px;color:#999;text-align:right;margin-top:2px;">Página '+(fi+1)+' de '+ordemForn.length+'</div></div>';
+    ocHtml+='</div>';
+    ocHtml+='<div class="forn-box"><div class="forn-label">Fornecedor</div><div class="forn-nome">'+forn+'</div></div>';
+    ocHtml+='<table><thead><tr>';
+    ocHtml+='<th>#</th><th>Código</th><th>Produto</th><th>Un</th><th class="r">Estq atual</th><th class="r">Vel./mês</th><th class="r">Qtde sugerida (30d)</th><th class="r">Custo unit. est.</th><th class="r">Total est.</th>';
+    ocHtml+='</tr></thead><tbody>';
+    itF.forEach(function(r,i){
+      var urgClass=r.urgencia===0?'urgente':'critico';
+      ocHtml+='<tr>';
+      ocHtml+='<td>'+(i+1)+'</td>';
+      ocHtml+='<td style="font-weight:600;">'+r.codigo+'</td>';
+      ocHtml+='<td class="'+urgClass+'">'+r.nome+(r.urgencia===0?' 🚨':' 🔴')+'</td>';
+      ocHtml+='<td>'+r.unidade+'</td>';
+      ocHtml+='<td class="r">'+(r.estoqueAtual!==null?r.estoqueAtual:'—')+'</td>';
+      ocHtml+='<td class="r">'+r.velMes.toFixed(1)+'/mês</td>';
+      ocHtml+='<td class="r" style="font-weight:700;color:#7C3AED;">'+r.sugestao30+' '+r.unidade+'</td>';
+      ocHtml+='<td class="r">R$ '+r.custoUnit.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
+      ocHtml+='<td class="r" style="font-weight:600;">R$ '+(r.custoUnit*r.sugestao30).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
+      ocHtml+='</tr>';
+    });
+    ocHtml+='<tr class="total-row"><td colspan="8" style="text-align:right;">TOTAL ESTIMADO</td>';
+    ocHtml+='<td class="r" style="color:#7C3AED;">R$ '+totalEst.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+    ocHtml+='</tbody></table>';
+    ocHtml+='<div class="footer">⚠️ Valores estimados com base no histórico de compras. Confirmar preços e disponibilidade com o fornecedor antes de emitir OC oficial.<br>';
+    ocHtml+='Gerado automaticamente pelo Dashboard Logístico Amora em '+dataHoje+' · Dados: Jan–Mai 2026</div>';
+    ocHtml+='</div>';
+  });
+  ocHtml+='</body></html>';
+  var w=window.open('','_blank','width=960,height=800,scrollbars=yes');
+  if(w){w.document.write(ocHtml);w.document.close();}else{alert('Permita pop-ups para gerar a OC.');}
 }
 async function loadEstoqueFromDB(){
   try{
