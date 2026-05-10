@@ -252,6 +252,7 @@ var kaBadge=0,ocBadge=0;
 var estoqueDeposito='amora_rs',estoqueItens={amora_rs:[],boeng:[]},estoqueInfo={amora_rs:{},boeng:{}};
 var estoqueFiltro='',estoqueMarca='',estoqueApRuptura=false,estoqueOrdem='nome';
 var comprasMarca='',comprasOrdem='urgencia',comprasSoUrgentes=false,comprasDias=30,comprasFornecedor='';
+var comprasSelecionados={},comprasQtdOverride={};
 var SECOES_DIARIAS=['recebimento','separacao','conferencia','expedicao','equipe','organizacao'];
 var SECOES=[
   {id:'visao',nome:'Visão Geral',icone:'📊',grupo:'Operações'},
@@ -1166,18 +1167,22 @@ function renderCompras(){
   [['urgencia','🚨 Urgência'],['forn','🏭 Fornecedor'],['vel_desc','🔥 Maior giro'],['dias_asc','⏱️ Menos dias'],['valor_desc','💰 Faturamento'],['abc','🅰️ ABC']].forEach(function(o){html+='<option value="'+o[0]+'"'+(comprasOrdem===o[0]?' selected':'')+'>'+o[1]+'</option>';});
   html+='</select>';
   html+='<button onclick="comprasSoUrgentes=!comprasSoUrgentes;renderSecao(\'compras\')" style="padding:7px 12px;border-radius:8px;border:2px solid '+(comprasSoUrgentes?'#DC2626':'var(--bd)')+';background:'+(comprasSoUrgentes?'#FEF2F2':'var(--w)')+';color:'+(comprasSoUrgentes?'#DC2626':'var(--i)')+';font-size:12px;font-weight:600;cursor:pointer;">🚨 Só urgentes</button>';
+  var selCount=Object.keys(comprasSelecionados).filter(function(k){return comprasSelecionados[k];}).length;
+  html+='<span id="compras-sel-count" style="font-size:11px;color:'+cor+';font-weight:700;">'+(selCount>0?selCount+' selecionados':'')+'</span>';
   html+='<span style="font-size:11px;color:var(--i);opacity:.6;flex:1;">'+filtrados.length+' de '+enriched.length+'</span>';
-  // Botão Gerar OC
+  html+='<button onclick="verHistoricoMensal()" style="padding:7px 12px;border-radius:8px;background:var(--n);color:var(--ch);font-size:12px;font-weight:600;border:1px solid var(--bd);cursor:pointer;">📊 Histórico Mensal</button>';
   var ocForn=comprasFornecedor||'';
-  html+='<button onclick="gerarOC(\''+ocForn.replace(/'/g,"\\'")+'\')" style="padding:8px 16px;border-radius:8px;background:#7C3AED;color:#fff;font-size:13px;font-weight:700;border:none;cursor:pointer;box-shadow:0 2px 8px #7C3AED44;">📋 Gerar OC'+(ocForn?' — '+ocForn.split(' ')[0]:'')+'</button>';
+  html+='<button id="btn-gerar-oc" onclick="abrirModalOC(\''+ocForn.replace(/'/g,"\\'")+'\',\''+cor+'\')" style="padding:8px 16px;border-radius:8px;background:'+cor+';color:#fff;font-size:13px;font-weight:700;border:none;cursor:pointer;box-shadow:0 2px 8px #7C3AED44;">📋 Gerar OC'+(selCount>0?' ('+selCount+')':'')+'</button>';
   html+='</div>';
   // ── Tabela ──
   html+='<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--bd);box-shadow:var(--sh);">';
   html+='<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>';
   var thStyle='padding:8px 10px;background:'+cor+';color:#fff;font-size:10px;letter-spacing:.06em;font-weight:600;';
-  ['','ABC','Código','Produto','Fornecedor','Vel./mês','Estq atual','Dias estq','Faturado','Margem','Repor 30d','Repor 60d'].forEach(function(h,i){
-    var align=i>=5?'text-align:right;':'text-align:left;';
-    var rad=i===0?'border-radius:8px 0 0 0;':i===11?'border-radius:0 8px 0 0;':'';
+  var allVisibleSel=filtrados.slice(0,400).length>0&&filtrados.slice(0,400).every(function(r){return comprasSelecionados[r.codigo];});
+  html+='<th style="'+thStyle+'text-align:center;border-radius:8px 0 0 0;width:36px;"><input type="checkbox" '+(allVisibleSel?'checked':'')+' onclick="toggleSelAll()" style="width:15px;height:15px;cursor:pointer;accent-color:#fff;" title="Selecionar todos"></th>';
+  ['ABC','Código','Produto','Fornecedor','Vel./mês','Estq atual','Dias estq','Faturado','Margem','Repor 30d','Repor 60d'].forEach(function(h,i){
+    var align=i>=4?'text-align:right;':'text-align:left;';
+    var rad=i===10?'border-radius:0 8px 0 0;':'';
     html+='<th style="'+thStyle+align+rad+'">'+h+'</th>';
   });
   html+='</tr></thead><tbody>';
@@ -1189,7 +1194,9 @@ function renderCompras(){
     var abcColor=abc==='A'?'#16A34A':abc==='B'?'#D97706':'#6B7280';
     var abcBg=abc==='A'?'#DCFCE7':abc==='B'?'#FEF3C7':'#F3F4F6';
     var uc=urgCor[r.urgencia]||'#6B7280';var ub=urgBg[r.urgencia]||'#F9FAFB';
-    var rowBg=r.urgencia===0?'#FFF5F5':idx%2===0?'var(--w)':'var(--n)';
+    var sel=!!comprasSelecionados[r.codigo];
+    var rowBg=sel?'#EDE9FE':r.urgencia===0?'#FFF5F5':idx%2===0?'var(--w)':'var(--n)';
+    var rowBorder=sel?'outline:2px solid '+cor+';outline-offset:-2px;':'';
     var diasTxt=r.diasEstoque===null?'—':r.diasEstoque===0?'<span style="color:#DC2626;font-weight:700;">0</span>':
       r.diasEstoque<=30?'<span style="color:#EA580C;font-weight:700;">'+r.diasEstoque+'d</span>':
       r.diasEstoque<=60?'<span style="color:#D97706;font-weight:600;">'+r.diasEstoque+'d</span>':
@@ -1198,8 +1205,9 @@ function renderCompras(){
       r.estoqueAtual<=0?'<span style="color:#DC2626;font-weight:700;">0</span>':
       '<span style="font-weight:600;">'+r.estoqueAtual+'</span>';
     var fornTxt=r.fornecedor?'<span style="font-size:10px;background:#EDE9FE;color:#5B21B6;padding:2px 6px;border-radius:8px;cursor:pointer;" onclick="comprasFornecedor=\''+r.fornecedor.replace(/'/g,"\\'")+'\';renderSecao(\'compras\')">'+r.fornecedor+'</span>':'<span style="opacity:.3;font-size:10px;">—</span>';
-    html+='<tr style="background:'+rowBg+';border-bottom:.5px solid var(--bd);">';
-    html+='<td style="padding:4px 8px;text-align:center;white-space:nowrap;"><span style="font-size:10px;font-weight:600;color:'+uc+';background:'+ub+';padding:2px 6px;border-radius:10px;">'+urgLabel[r.urgencia]+'</span></td>';
+    var qtdOc=comprasQtdOverride[r.codigo]!==undefined?comprasQtdOverride[r.codigo]:r.sugestao30;
+    html+='<tr id="row-cp-'+r.codigo+'" style="background:'+rowBg+';border-bottom:.5px solid var(--bd);'+rowBorder+'">';
+    html+='<td style="padding:4px 8px;text-align:center;"><input type="checkbox" id="cb-cp-'+r.codigo+'" '+(sel?'checked':'')+' onclick="toggleSel(\''+r.codigo+'\')" style="width:15px;height:15px;cursor:pointer;accent-color:'+cor+';"></td>';
     html+='<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;width:20px;height:20px;line-height:20px;border-radius:50%;background:'+abcBg+';color:'+abcColor+';font-weight:800;font-size:10px;">'+abc+'</span></td>';
     html+='<td style="padding:6px 8px;font-weight:600;font-family:var(--fm);font-size:11px;">'+(r.codigo||'')+'</td>';
     html+='<td style="padding:6px 8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+(r.nome||'')+'">'+(r.nome||'')+'</td>';
@@ -1209,11 +1217,11 @@ function renderCompras(){
     html+='<td style="padding:6px 8px;text-align:right;">'+diasTxt+'</td>';
     html+='<td style="padding:6px 8px;text-align:right;">R$ '+r.preco_total.toLocaleString('pt-BR',{maximumFractionDigits:0})+'</td>';
     html+='<td style="padding:6px 8px;text-align:right;color:'+(r.marg_pct>=20?'#16A34A':r.marg_pct>=10?'#D97706':'#DC2626')+';font-weight:600;">'+r.marg_pct.toFixed(1)+'%</td>';
-    html+='<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+cor+';">'+(r.sugestao30>0?r.sugestao30+' '+r.unidade:'<span style="opacity:.3;">—</span>')+'</td>';
+    html+='<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+cor+';">'+(qtdOc>0?qtdOc+' '+r.unidade:'<span style="opacity:.3;">—</span>')+'</td>';
     html+='<td style="padding:6px 8px;text-align:right;opacity:.8;">'+(r.sugestao60>0?r.sugestao60+' '+r.unidade:'<span style="opacity:.3;">—</span>')+'</td>';
     html+='</tr>';
   });
-  if(filtrados.length>400)html+='<tr><td colspan="12" style="padding:10px;text-align:center;font-size:11px;opacity:.5;">Mostrando 400 de '+filtrados.length+'. Use filtros para refinar.</td></tr>';
+  if(filtrados.length>400)html+='<tr><td colspan="13" style="padding:10px;text-align:center;font-size:11px;opacity:.5;">Mostrando 400 de '+filtrados.length+'. Use filtros para refinar.</td></tr>';
   html+='</tbody></table></div>';
   return html;
 }
@@ -1300,94 +1308,247 @@ function importarFornecedores(event){
   };
   reader.readAsArrayBuffer(file);
 }
-// ── Gerar Ordem de Compra (nova janela / print) ──
-function gerarOC(fornecedorFiltro){
+// ── Seleção de itens para OC ──
+function toggleSel(cod){
+  comprasSelecionados[cod]=!comprasSelecionados[cod];
+  var cb=document.getElementById('cb-cp-'+cod);if(cb)cb.checked=!!comprasSelecionados[cod];
+  var row=document.getElementById('row-cp-'+cod);
+  if(row){row.style.background=comprasSelecionados[cod]?'#EDE9FE':'';row.style.outline=comprasSelecionados[cod]?'2px solid #7C3AED':'';}
+  var cnt=Object.keys(comprasSelecionados).filter(function(k){return comprasSelecionados[k];}).length;
+  var el=document.getElementById('compras-sel-count');if(el)el.textContent=cnt>0?cnt+' selecionados':'';
+  var btn=document.getElementById('btn-gerar-oc');if(btn)btn.textContent='📋 Gerar OC'+(cnt>0?' ('+cnt+')':'');
+}
+function toggleSelAll(){
+  var enriched=buildEnrichedCompras();var vis=enriched.slice();
+  if(comprasMarca)vis=vis.filter(function(r){return marcaItem(r.nome)===comprasMarca;});
+  if(comprasFornecedor)vis=vis.filter(function(r){return r.fornecedor===comprasFornecedor;});
+  if(comprasSoUrgentes)vis=vis.filter(function(r){return r.urgencia<=1;});
+  var allSel=vis.length>0&&vis.every(function(r){return comprasSelecionados[r.codigo];});
+  vis.forEach(function(r){comprasSelecionados[r.codigo]=!allSel;});
+  renderSecao('compras');
+}
+// ── Modal pré-OC ──
+function abrirModalOC(fornFiltro){
   var enriched=buildEnrichedCompras();
   if(!enriched.length){alert('Carregue os dados de vendas primeiro.');return;}
-  // Itens que precisam de compra: ruptura ou crítico, com sugestão > 0
-  var itens=enriched.filter(function(r){return r.urgencia<=1&&r.sugestao30>0;});
-  if(fornecedorFiltro)itens=itens.filter(function(r){return r.fornecedor===fornecedorFiltro;});
-  if(!itens.length){alert('Nenhum item urgente'+(fornecedorFiltro?' para este fornecedor':'')+'. Tudo OK!');return;}
-  // Agrupar por fornecedor
+  var selCount=Object.keys(comprasSelecionados).filter(function(k){return comprasSelecionados[k];}).length;
+  var itens;
+  if(selCount>0){
+    itens=enriched.filter(function(r){return comprasSelecionados[r.codigo];});
+    if(fornFiltro)itens=itens.filter(function(r){return r.fornecedor===fornFiltro;});
+  }else{
+    itens=enriched.filter(function(r){return r.urgencia<=1&&r.sugestao30>0;});
+    if(fornFiltro)itens=itens.filter(function(r){return r.fornecedor===fornFiltro;});
+  }
+  if(!itens.length){alert('Nenhum item selecionado ou urgente'+(fornFiltro?' para este fornecedor':'')+'. Selecione itens com os checkboxes ou aguarde itens ficarem críticos.');return;}
   var grupos={},ordemForn=[];
-  itens.forEach(function(r){
-    var f=r.fornecedor||'Fornecedor não identificado';
-    if(!grupos[f]){grupos[f]=[];ordemForn.push(f);}
-    grupos[f].push(r);
-  });
+  itens.forEach(function(r){var f=r.fornecedor||'Fornecedor não identificado';if(!grupos[f]){grupos[f]=[];ordemForn.push(f);}grupos[f].push(r);});
   ordemForn.sort();
-  var dataHoje=new Date().toLocaleDateString('pt-BR');
-  var ocNum='OC-'+new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')+String(new Date().getDate()).padStart(2,'0');
-  // ── Montar HTML da OC ──
-  var ocHtml='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ordem de Compra — Amora</title>';
-  ocHtml+='<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:12px;color:#111;background:#fff;}';
-  ocHtml+='.page{padding:24px 32px;max-width:900px;margin:0 auto;page-break-after:always;}';
-  ocHtml+='.page:last-child{page-break-after:avoid;}';
-  ocHtml+='.logo{font-size:18px;font-weight:800;color:#7C3AED;}';
-  ocHtml+='.sub{font-size:11px;color:#666;margin-top:2px;}';
-  ocHtml+='.oc-num{font-size:13px;font-weight:700;color:#7C3AED;text-align:right;}';
-  ocHtml+='.header-row{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #7C3AED;padding-bottom:12px;margin-bottom:16px;}';
-  ocHtml+='.forn-box{background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:10px 14px;margin-bottom:16px;}';
-  ocHtml+='.forn-label{font-size:10px;color:#7C3AED;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;}';
-  ocHtml+='.forn-nome{font-size:14px;font-weight:700;color:#111;}';
-  ocHtml+='table{width:100%;border-collapse:collapse;margin-bottom:10px;}';
-  ocHtml+='thead th{background:#7C3AED;color:#fff;padding:7px 10px;font-size:10px;letter-spacing:.06em;text-align:left;}';
-  ocHtml+='thead th.r{text-align:right;}';
-  ocHtml+='tbody tr:nth-child(even){background:#F5F3FF;}';
-  ocHtml+='tbody td{padding:6px 10px;border-bottom:1px solid #E5E7EB;font-size:11px;}';
-  ocHtml+='tbody td.r{text-align:right;}';
-  ocHtml+='.total-row{background:#EDE9FE!important;font-weight:700;}';
-  ocHtml+='.total-row td{padding:8px 10px;font-size:12px;}';
-  ocHtml+='.footer{margin-top:12px;font-size:10px;color:#9CA3AF;border-top:1px solid #E5E7EB;padding-top:8px;}';
-  ocHtml+='.urgente{color:#DC2626;font-weight:700;}';
-  ocHtml+='.critico{color:#EA580C;font-weight:600;}';
-  ocHtml+='@media print{.no-print{display:none!important;}.page{padding:16px;}body{font-size:11px;}}';
-  ocHtml+='</style></head><body>';
-  // Botão imprimir (some no print)
-  ocHtml+='<div class="no-print" style="background:#7C3AED;color:#fff;padding:10px 20px;display:flex;gap:16px;align-items:center;position:sticky;top:0;z-index:99;">';
-  ocHtml+='<span style="font-weight:700;font-size:14px;">📋 Amora — Ordens de Compra</span>';
-  ocHtml+='<span style="flex:1;font-size:12px;opacity:.7;">'+ordemForn.length+' fornecedor(es) · '+itens.length+' itens</span>';
-  ocHtml+='<button onclick="window.print()" style="background:#fff;color:#7C3AED;border:none;padding:8px 20px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">🖨️ Imprimir / Salvar PDF</button>';
-  ocHtml+='<button onclick="window.close()" style="background:transparent;color:#fff;border:1px solid #fff6;padding:8px 14px;border-radius:8px;font-size:12px;cursor:pointer;">✕ Fechar</button>';
-  ocHtml+='</div>';
-  // Uma página por fornecedor
+  window._ocItens=itens;window._ocGrupos=grupos;window._ocOrdemForn=ordemForn;
+  var hoje=new Date().toISOString().split('T')[0];
+  var ocNum='OC-'+new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')+String(new Date().getDate()).padStart(2,'0')+'-'+String(Math.floor(Math.random()*900+100));
+  var ov=document.getElementById('oc-modal-overlay');
+  if(!ov){ov=document.createElement('div');ov.id='oc-modal-overlay';ov.style.cssText='position:fixed;inset:0;background:#0009;z-index:9999;overflow-y:auto;padding:20px 12px;';document.body.appendChild(ov);}
+  var h='<div style="background:#fff;max-width:980px;margin:0 auto;border-radius:16px;overflow:hidden;box-shadow:0 8px 48px #0004;">';
+  // Header fixo
+  h+='<div style="background:#7C3AED;color:#fff;padding:14px 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10;">';
+  h+='<span style="font-size:20px;">📋</span><span style="font-size:15px;font-weight:700;flex:1;">Gerar Ordem de Compra</span>';
+  h+='<button onclick="imprimirOC()" style="background:#fff;color:#7C3AED;border:none;padding:8px 18px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">🖨️ Imprimir / PDF</button>';
+  h+='<button onclick="document.getElementById(\'oc-modal-overlay\').style.display=\'none\'" style="background:transparent;color:#fff;border:1px solid #fff5;padding:7px 12px;border-radius:8px;font-size:12px;cursor:pointer;margin-left:6px;">✕ Fechar</button>';
+  h+='</div>';
+  h+='<div style="padding:20px 24px;">';
+  // Campos da OC
+  h+='<div style="background:#F5F3FF;border-radius:12px;padding:16px;margin-bottom:18px;">';
+  h+='<div style="font-size:11px;font-weight:700;color:#7C3AED;margin-bottom:12px;letter-spacing:.06em;">DADOS DA ORDEM DE COMPRA</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;">';
+  var fs='width:100%;padding:7px 10px;border:1px solid #DDD6FE;border-radius:8px;font-size:12px;background:#fff;color:#111;';
+  var lb='font-size:10px;font-weight:700;color:#5B21B6;letter-spacing:.05em;display:block;margin-bottom:3px;';
+  [['oc-num','Número da OC','text',ocNum,''],['oc-emissao','Data de emissão','date',hoje,''],
+   ['oc-entrega','Prazo de entrega','date','',''],['oc-pgto','Prazo de pagamento','text','','Ex: 30 DDL, À vista, 28/35/42 DDL'],
+   ['oc-comprador','Comprador responsável','text','','Nome'],['oc-cnpj-forn','CNPJ Fornecedor','text','','00.000.000/0001-00'],
+   ['oc-local','Local de entrega','text','Amora RS — Porto Alegre/RS','']].forEach(function(f){
+    h+='<div><label style="'+lb+'">'+f[1].toUpperCase()+'</label>';
+    h+='<input id="'+f[0]+'" type="'+f[2]+'" value="'+f[3]+'" placeholder="'+f[4]+'" style="'+fs+'"></div>';
+  });
+  h+='<div><label style="'+lb+'">CONDIÇÃO DE FRETE</label>';
+  h+='<select id="oc-frete" style="'+fs+'"><option value="CIF">CIF — Frete por conta do fornecedor</option><option value="FOB">FOB — Frete por conta do comprador</option></select></div>';
+  h+='<div><label style="'+lb+'">MOEDA</label><select id="oc-moeda" style="'+fs+'"><option>BRL — Real Brasileiro</option><option>USD — Dólar Americano</option><option>EUR — Euro</option></select></div>';
+  h+='</div>';
+  h+='<div style="margin-top:12px;"><label style="'+lb+'">OBSERVAÇÕES / CONDIÇÕES ESPECIAIS</label>';
+  h+='<textarea id="oc-obs" rows="3" placeholder="Instruções de entrega, referências, condições especiais, número de pedido interno..." style="width:100%;padding:9px 10px;border:1px solid #DDD6FE;border-radius:8px;font-size:12px;resize:vertical;background:#fff;color:#111;"></textarea></div>';
+  h+='</div>';
+  // Itens por fornecedor
   ordemForn.forEach(function(forn,fi){
-    var itF=grupos[forn];
-    itF.sort(function(a,b){return a.urgencia-b.urgencia||b.preco_total-a.preco_total;});
-    var totalEst=itF.reduce(function(s,r){return s+r.custoUnit*r.sugestao30;},0);
+    var itF=grupos[forn];itF.sort(function(a,b){return a.urgencia-b.urgencia||b.preco_total-a.preco_total;});
+    var sub=itF.reduce(function(s,r){var q=comprasQtdOverride[r.codigo]!==undefined?comprasQtdOverride[r.codigo]:r.sugestao30;return s+r.custoUnit*(q||0);},0);
+    h+='<div style="margin-bottom:16px;">';
+    h+='<div style="font-size:12px;font-weight:700;color:#7C3AED;background:#EDE9FE;padding:8px 12px;border-radius:8px 8px 0 0;border:1px solid #DDD6FE;">🏭 '+forn+' — <span id="subtit-forn-'+fi+'">'+itF.length+' itens · subtotal R$ '+sub.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span></div>';
+    h+='<div style="overflow-x:auto;border:1px solid #DDD6FE;border-top:none;border-radius:0 0 8px 8px;">';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>';
+    ['Código','Produto','Un','Estq atual','Vel./mês','Qtde OC','Custo unit. est.','Total est.'].forEach(function(hd,i){
+      h+='<th style="padding:7px 10px;background:#6D28D9;color:#fff;font-weight:600;font-size:10px;text-align:'+(i>=3?'right':'left')+'">'+hd+'</th>';
+    });
+    h+='</tr></thead><tbody>';
+    itF.forEach(function(r,ri){
+      var qtd=comprasQtdOverride[r.codigo]!==undefined?comprasQtdOverride[r.codigo]:r.sugestao30;
+      var tot=r.custoUnit*(qtd||0);
+      h+='<tr style="background:'+(ri%2===0?'#fff':'#F5F3FF')+';border-bottom:1px solid #EDE9FE;">';
+      h+='<td style="padding:6px 10px;font-weight:600;font-size:11px;">'+r.codigo+'</td>';
+      h+='<td style="padding:6px 10px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+r.nome+'">'+r.nome+'</td>';
+      h+='<td style="padding:6px 10px;">'+r.unidade+'</td>';
+      h+='<td style="padding:6px 10px;text-align:right;">'+(r.estoqueAtual!==null?r.estoqueAtual:'—')+'</td>';
+      h+='<td style="padding:6px 10px;text-align:right;">'+r.velMes.toFixed(1)+'/mês</td>';
+      h+='<td style="padding:6px 10px;text-align:right;"><input type="number" min="0" value="'+qtd+'" id="qtd-oc-'+r.codigo+'" onchange="comprasQtdOverride[\''+r.codigo+'\']=Math.max(0,parseInt(this.value)||0);atualizarTotalOC('+fi+')" style="width:72px;padding:4px 8px;border:1.5px solid #7C3AED;border-radius:6px;text-align:right;font-weight:700;color:#7C3AED;font-size:12px;"></td>';
+      h+='<td style="padding:6px 10px;text-align:right;">R$ '+r.custoUnit.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
+      h+='<td style="padding:6px 10px;text-align:right;font-weight:600;" id="tot-oc-'+r.codigo+'">R$ '+tot.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
+      h+='</tr>';
+    });
+    h+='<tr style="background:#EDE9FE;font-weight:700;"><td colspan="7" style="padding:8px 10px;text-align:right;font-size:12px;">Subtotal '+forn.split(' ')[0]+'</td>';
+    h+='<td style="padding:8px 10px;text-align:right;color:#7C3AED;font-size:13px;" id="sub-forn-'+fi+'">R$ '+sub.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+    h+='</tbody></table></div></div>';
+  });
+  // Total geral
+  var totGeral=itens.reduce(function(s,r){var q=comprasQtdOverride[r.codigo]!==undefined?comprasQtdOverride[r.codigo]:r.sugestao30;return s+r.custoUnit*(q||0);},0);
+  h+='<div style="background:#7C3AED;color:#fff;padding:14px 20px;border-radius:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">';
+  h+='<span style="font-weight:700;font-size:14px;">TOTAL ESTIMADO DA OC</span>';
+  h+='<span style="font-size:20px;font-weight:800;" id="tot-geral-oc">R$ '+totGeral.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span>';
+  h+='</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:flex-end;">';
+  h+='<button onclick="document.getElementById(\'oc-modal-overlay\').style.display=\'none\'" style="padding:9px 20px;border-radius:10px;border:1px solid #DDD6FE;background:#fff;font-size:13px;cursor:pointer;">Cancelar</button>';
+  h+='<button onclick="imprimirOC()" style="padding:9px 24px;border-radius:10px;background:#7C3AED;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 10px #7C3AED44;">🖨️ Imprimir / Salvar PDF</button>';
+  h+='</div>';
+  h+='</div></div>';
+  ov.innerHTML=h;ov.style.display='block';
+}
+function atualizarTotalOC(fornIdx){
+  var itens=window._ocItens||[];var grupos=window._ocGrupos||{};var ordemForn=window._ocOrdemForn||[];
+  var totGeral=0;
+  ordemForn.forEach(function(forn,fi){
+    var sub=0;
+    (grupos[forn]||[]).forEach(function(r){
+      var qtd=Math.max(0,parseInt((document.getElementById('qtd-oc-'+r.codigo)||{}).value)||0);
+      var tot=r.custoUnit*qtd;sub+=tot;totGeral+=tot;
+      var el=document.getElementById('tot-oc-'+r.codigo);
+      if(el)el.textContent='R$ '+tot.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    });
+    var elS=document.getElementById('sub-forn-'+fi);
+    if(elS)elS.textContent='R$ '+sub.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    var elT=document.getElementById('subtit-forn-'+fi);
+    if(elT)elT.textContent=(grupos[forn]||[]).length+' itens · subtotal R$ '+sub.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  });
+  var elG=document.getElementById('tot-geral-oc');
+  if(elG)elG.textContent='R$ '+totGeral.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function imprimirOC(){
+  var itens=window._ocItens||[];if(!itens.length)return;
+  var grupos=window._ocGrupos||{};var ordemForn=window._ocOrdemForn||[];
+  function gv(id){var el=document.getElementById(id);return el?el.value||el.textContent||'':'';}
+  var ocNum=gv('oc-num'),emissao=gv('oc-emissao'),entrega=gv('oc-entrega'),pgto=gv('oc-pgto');
+  var comprador=gv('oc-comprador'),cnpjForn=gv('oc-cnpj-forn'),local=gv('oc-local'),frete=gv('oc-frete'),moeda=gv('oc-moeda'),obs=gv('oc-obs');
+  function fmtDate(s){if(!s)return'—';var p=s.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:s;}
+  var dataHoje=new Date().toLocaleDateString('pt-BR');
+  var ocHtml='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>'+ocNum+' — Ordem de Compra Amora</title>';
+  ocHtml+='<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff;}';
+  ocHtml+='.page{padding:20px 28px;max-width:900px;margin:0 auto;page-break-after:always;}.page:last-child{page-break-after:avoid;}';
+  ocHtml+='.hdr{display:flex;justify-content:space-between;border-bottom:2.5px solid #7C3AED;padding-bottom:10px;margin-bottom:14px;}';
+  ocHtml+='.logo{font-size:17px;font-weight:800;color:#7C3AED;}.sub{font-size:10px;color:#777;margin-top:2px;}';
+  ocHtml+='.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}';
+  ocHtml+='.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;}';
+  ocHtml+='.box{background:#F5F3FF;border:1px solid #DDD6FE;border-radius:6px;padding:7px 10px;}';
+  ocHtml+='.boxl{font-size:9px;color:#7C3AED;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;}';
+  ocHtml+='.boxv{font-size:12px;font-weight:600;color:#111;}';
+  ocHtml+='.obs{background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;margin-bottom:12px;font-size:11px;}';
+  ocHtml+='table{width:100%;border-collapse:collapse;margin-bottom:8px;}thead th{background:#7C3AED;color:#fff;padding:6px 8px;font-size:9px;letter-spacing:.05em;}';
+  ocHtml+='thead th.r{text-align:right;}tbody tr:nth-child(even){background:#F5F3FF;}';
+  ocHtml+='tbody td{padding:5px 8px;border-bottom:1px solid #E5E7EB;font-size:10px;}tbody td.r{text-align:right;}';
+  ocHtml+='.tot{background:#EDE9FE!important;font-weight:700;}.footer{margin-top:8px;font-size:9px;color:#9CA3AF;border-top:1px solid #E5E7EB;padding-top:6px;}';
+  ocHtml+='.forn-hdr{background:#EDE9FE;border:1px solid #DDD6FE;border-radius:6px;padding:7px 10px;margin-bottom:6px;}';
+  ocHtml+='@media print{.no-print{display:none!important;}body{font-size:10px;}}';
+  ocHtml+='</style></head><body>';
+  ocHtml+='<div class="no-print" style="background:#7C3AED;color:#fff;padding:10px 20px;display:flex;gap:12px;align-items:center;position:sticky;top:0;z-index:99;">';
+  ocHtml+='<span style="font-weight:700;font-size:14px;">'+ocNum+'</span><span style="flex:1;font-size:12px;opacity:.7;">Amora Distribuidora · '+ordemForn.length+' fornecedor(es) · '+itens.length+' itens</span>';
+  ocHtml+='<button onclick="window.print()" style="background:#fff;color:#7C3AED;border:none;padding:8px 20px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">🖨️ Imprimir / PDF</button>';
+  ocHtml+='<button onclick="window.close()" style="background:transparent;color:#fff;border:1px solid #fff5;padding:7px 12px;border-radius:8px;font-size:12px;cursor:pointer;margin-left:4px;">✕</button>';
+  ocHtml+='</div>';
+  ordemForn.forEach(function(forn,fi){
+    var itF=grupos[forn]||[];itF.sort(function(a,b){return a.urgencia-b.urgencia||b.preco_total-a.preco_total;});
+    var qtds={};itF.forEach(function(r){qtds[r.codigo]=Math.max(0,parseInt((document.getElementById('qtd-oc-'+r.codigo)||{}).value)||0);});
+    var subTot=itF.reduce(function(s,r){return s+r.custoUnit*qtds[r.codigo];},0);
     ocHtml+='<div class="page">';
-    ocHtml+='<div class="header-row">';
-    ocHtml+='<div><div class="logo">AMORA DISTRIBUIDORA</div><div class="sub">Ordem de Compra · Emitida em '+dataHoje+'</div></div>';
-    ocHtml+='<div><div class="oc-num">'+ocNum+(ordemForn.length>1?'-'+(fi+1):'')+'</div><div style="font-size:10px;color:#999;text-align:right;margin-top:2px;">Página '+(fi+1)+' de '+ordemForn.length+'</div></div>';
+    ocHtml+='<div class="hdr"><div><div class="logo">AMORA DISTRIBUIDORA</div><div class="sub">CNPJ: 00.000.000/0001-00 · Porto Alegre/RS</div></div>';
+    ocHtml+='<div style="text-align:right;"><div style="font-size:14px;font-weight:800;color:#7C3AED;">ORDEM DE COMPRA</div>';
+    ocHtml+='<div style="font-size:12px;font-weight:700;color:#111;">'+ocNum+(ordemForn.length>1?' / F'+(fi+1):'')+'</div>';
+    ocHtml+='<div style="font-size:9px;color:#999;">Página '+(fi+1)+' de '+ordemForn.length+'</div></div></div>';
+    ocHtml+='<div class="grid3">';
+    ocHtml+='<div class="box"><div class="boxl">Data de emissão</div><div class="boxv">'+fmtDate(emissao)+'</div></div>';
+    ocHtml+='<div class="box"><div class="boxl">Prazo de entrega</div><div class="boxv">'+(entrega?fmtDate(entrega):'A combinar')+'</div></div>';
+    ocHtml+='<div class="box"><div class="boxl">Prazo de pagamento</div><div class="boxv">'+(pgto||'A combinar')+'</div></div>';
+    ocHtml+='<div class="box"><div class="boxl">Condição de frete</div><div class="boxv">'+(frete||'CIF')+'</div></div>';
+    ocHtml+='<div class="box"><div class="boxl">Local de entrega</div><div class="boxv">'+(local||'Amora RS')+'</div></div>';
+    ocHtml+='<div class="box"><div class="boxl">Comprador responsável</div><div class="boxv">'+(comprador||'—')+'</div></div>';
     ocHtml+='</div>';
-    ocHtml+='<div class="forn-box"><div class="forn-label">Fornecedor</div><div class="forn-nome">'+forn+'</div></div>';
-    ocHtml+='<table><thead><tr>';
-    ocHtml+='<th>#</th><th>Código</th><th>Produto</th><th>Un</th><th class="r">Estq atual</th><th class="r">Vel./mês</th><th class="r">Qtde sugerida (30d)</th><th class="r">Custo unit. est.</th><th class="r">Total est.</th>';
-    ocHtml+='</tr></thead><tbody>';
+    ocHtml+='<div class="forn-hdr"><span style="font-size:9px;font-weight:700;color:#7C3AED;text-transform:uppercase;letter-spacing:.06em;">Fornecedor</span>';
+    ocHtml+='<span style="font-size:13px;font-weight:700;margin-left:10px;">'+forn+'</span>';
+    if(cnpjForn)ocHtml+='<span style="font-size:10px;color:#666;margin-left:10px;">CNPJ: '+cnpjForn+'</span>';
+    ocHtml+='</div>';
+    if(obs)ocHtml+='<div class="obs">📝 <strong>Observações:</strong> '+obs+'</div>';
+    ocHtml+='<table><thead><tr><th>#</th><th>Código</th><th>Produto</th><th>Un</th><th class="r">Estq atual</th><th class="r">Vel./mês</th><th class="r">Qtde OC</th><th class="r">Custo unit. est.</th><th class="r">Total est.</th></tr></thead><tbody>';
     itF.forEach(function(r,i){
-      var urgClass=r.urgencia===0?'urgente':'critico';
-      ocHtml+='<tr>';
-      ocHtml+='<td>'+(i+1)+'</td>';
-      ocHtml+='<td style="font-weight:600;">'+r.codigo+'</td>';
-      ocHtml+='<td class="'+urgClass+'">'+r.nome+(r.urgencia===0?' 🚨':' 🔴')+'</td>';
-      ocHtml+='<td>'+r.unidade+'</td>';
+      var q=qtds[r.codigo];var tot=r.custoUnit*q;
+      ocHtml+='<tr><td>'+(i+1)+'</td><td style="font-weight:600;">'+r.codigo+'</td>';
+      ocHtml+='<td>'+r.nome+'</td><td>'+r.unidade+'</td>';
       ocHtml+='<td class="r">'+(r.estoqueAtual!==null?r.estoqueAtual:'—')+'</td>';
       ocHtml+='<td class="r">'+r.velMes.toFixed(1)+'/mês</td>';
-      ocHtml+='<td class="r" style="font-weight:700;color:#7C3AED;">'+r.sugestao30+' '+r.unidade+'</td>';
+      ocHtml+='<td class="r" style="font-weight:700;color:#7C3AED;">'+q+' '+r.unidade+'</td>';
       ocHtml+='<td class="r">R$ '+r.custoUnit.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
-      ocHtml+='<td class="r" style="font-weight:600;">R$ '+(r.custoUnit*r.sugestao30).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
-      ocHtml+='</tr>';
+      ocHtml+='<td class="r" style="font-weight:600;">R$ '+tot.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
     });
-    ocHtml+='<tr class="total-row"><td colspan="8" style="text-align:right;">TOTAL ESTIMADO</td>';
-    ocHtml+='<td class="r" style="color:#7C3AED;">R$ '+totalEst.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+    ocHtml+='<tr class="tot"><td colspan="8" style="text-align:right;">TOTAL ESTIMADO ('+frete||'CIF'+')</td>';
+    ocHtml+='<td class="r" style="color:#7C3AED;font-size:12px;">R$ '+subTot.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
     ocHtml+='</tbody></table>';
-    ocHtml+='<div class="footer">⚠️ Valores estimados com base no histórico de compras. Confirmar preços e disponibilidade com o fornecedor antes de emitir OC oficial.<br>';
-    ocHtml+='Gerado automaticamente pelo Dashboard Logístico Amora em '+dataHoje+' · Dados: Jan–Mai 2026</div>';
+    ocHtml+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">';
+    ocHtml+='<div style="border-top:1px solid #ccc;padding-top:8px;text-align:center;font-size:10px;color:#666;">Assinatura do Comprador<br><br><br>'+comprador+'</div>';
+    ocHtml+='<div style="border-top:1px solid #ccc;padding-top:8px;text-align:center;font-size:10px;color:#666;">Assinatura / Carimbo do Fornecedor<br><br><br>'+forn+'</div>';
+    ocHtml+='</div>';
+    ocHtml+='<div class="footer">⚠️ Valores estimados com base no histórico de compras (Jan–Mai 2026). Confirmar preços e disponibilidade antes de emitir pedido oficial. · Gerado em '+dataHoje+'</div>';
     ocHtml+='</div>';
   });
   ocHtml+='</body></html>';
-  var w=window.open('','_blank','width=960,height=800,scrollbars=yes');
-  if(w){w.document.write(ocHtml);w.document.close();}else{alert('Permita pop-ups para gerar a OC.');}
+  var w=window.open('','_blank','width=1000,height=800,scrollbars=yes');
+  if(w){w.document.write(ocHtml);w.document.close();}else{alert('Permita pop-ups para imprimir a OC.');}
+}
+// ── Histórico Mensal Estimado ──
+function verHistoricoMensal(){
+  var enriched=buildEnrichedCompras();
+  if(!enriched.length){alert('Carregue os dados de vendas primeiro.');return;}
+  var meses=[{n:'Jan',d:31},{n:'Fev',d:28},{n:'Mar',d:31},{n:'Abr',d:30},{n:'Mai',d:9}];
+  var total=meses.reduce(function(s,m){return s+m.d;},0); // 129
+  var sorted=enriched.slice().sort(function(a,b){return b.preco_total-a.preco_total;});
+  var body='<div style="font-size:11px;color:#666;margin-bottom:12px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;">📊 Estimativa baseada na velocidade média do período Jan–Mai 2026 (129 dias). Distribuição proporcional aos dias de cada mês.</div>';
+  body+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>';
+  body+='<th style="padding:7px 10px;background:#7C3AED;color:#fff;text-align:left;border-radius:8px 0 0 0;">Código</th>';
+  body+='<th style="padding:7px 10px;background:#7C3AED;color:#fff;text-align:left;">Produto</th>';
+  body+='<th style="padding:7px 10px;background:#7C3AED;color:#fff;text-align:left;">Fornecedor</th>';
+  body+='<th style="padding:7px 10px;background:#7C3AED;color:#fff;text-align:right;">Total Jan–Mai</th>';
+  meses.forEach(function(m){body+='<th style="padding:7px 10px;background:#6D28D9;color:#fff;text-align:right;">'+m.n+'</th>';});
+  body+='<th style="padding:7px 10px;background:#7C3AED;color:#fff;text-align:right;border-radius:0 8px 0 0;">Vel./mês</th>';
+  body+='</tr></thead><tbody>';
+  sorted.slice(0,300).forEach(function(r,idx){
+    body+='<tr style="background:'+(idx%2===0?'#fff':'#F5F3FF')+';border-bottom:1px solid #E5E7EB;">';
+    body+='<td style="padding:6px 10px;font-weight:600;font-family:monospace;">'+r.codigo+'</td>';
+    body+='<td style="padding:6px 10px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+r.nome+'">'+r.nome+'</td>';
+    body+='<td style="padding:6px 10px;font-size:11px;opacity:.7;">'+r.fornecedor+'</td>';
+    body+='<td style="padding:6px 10px;text-align:right;font-weight:700;">'+r.quantidade+'</td>';
+    meses.forEach(function(m){
+      var est=Math.round(r.quantidade*(m.d/total));
+      body+='<td style="padding:6px 10px;text-align:right;">'+(est||'—')+'</td>';
+    });
+    body+='<td style="padding:6px 10px;text-align:right;font-weight:600;color:#7C3AED;">'+r.velMes.toFixed(1)+'/mês</td>';
+    body+='</tr>';
+  });
+  body+='</tbody></table></div>';
+  if(sorted.length>300)body+='<div style="padding:8px;text-align:center;font-size:11px;opacity:.5;">Mostrando 300 de '+sorted.length+'</div>';
+  openModal('📊 Histórico Mensal Estimado — Jan a Mai 2026',body,'<button onclick="closeModal()" style="padding:8px 20px;border-radius:8px;background:#7C3AED;color:#fff;border:none;cursor:pointer;font-weight:600;">Fechar</button>');
 }
 async function loadEstoqueFromDB(){
   try{
