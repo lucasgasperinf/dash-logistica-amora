@@ -1227,7 +1227,10 @@ function importarVendas(event){
       var arr=new Uint8Array(e.target.result);
       var wb=XLSX.read(arr,{type:'array'});
       var ws=wb.Sheets[wb.SheetNames[0]];
-      var raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+      // raw:true → SheetJS devolve JS numbers diretamente, sem formatação de string
+      var raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+      // pn(): se já é number usa direto; se é string pt-BR (1.234,56) converte corretamente
+      function pn(v){if(typeof v==='number')return v;var s=(v||'').toString().replace(/[R$\s]/g,'').trim();if(!s)return 0;if(s.indexOf(',')!==-1)return parseFloat(s.replace(/\./g,'').replace(',','.'))||0;return parseFloat(s)||0;}
       // Detectar header (linha com "Código")
       var hIdx=0;
       for(var i=0;i<Math.min(raw.length,5);i++){if((raw[i][0]||'').toString().toLowerCase().replace(/\s/g,'').indexOf('digo')!==-1){hIdx=i;break;}}
@@ -1242,12 +1245,12 @@ function importarVendas(event){
         var cod=(f[iCod]||'').toString().trim();
         if(!cod||!/^\d+$/.test(cod))continue; // pular rodapé / linhas não-numéricas
         var nome=iNome>=0?(f[iNome]||'').toString().trim():'';
-        var qty=parseFloat((f[iQty]||'0').toString().replace(/\./g,'').replace(',','.'))||0;
+        var qty=pn(iQty>=0?f[iQty]:0);
         var un=iUn>=0?(f[iUn]||'').toString().trim():'';
-        var custo=parseFloat((f[iCusto]||'0').toString().replace(/[R$\s\.]/g,'').replace(',','.'))||0;
-        var preco=parseFloat((f[iPreco]||'0').toString().replace(/[R$\s\.]/g,'').replace(',','.'))||0;
-        var lucro=parseFloat((f[iLucro]||'0').toString().replace(',','.'))||0;
-        var marg=parseFloat((f[iMarg]||'0').toString().replace(',','.'))||0;
+        var custo=pn(iCusto>=0?f[iCusto]:0);
+        var preco=pn(iPreco>=0?f[iPreco]:0);
+        var lucro=pn(iLucro>=0?f[iLucro]:0);
+        var marg=pn(iMarg>=0?f[iMarg]:0);
         rows.push({codigo:cod,nome:nome,quantidade:qty,unidade:un,custo_total:custo,preco_total:preco,lucro_pct:lucro,marg_pct:marg});
       }
       V['compras_rows']=rows;
