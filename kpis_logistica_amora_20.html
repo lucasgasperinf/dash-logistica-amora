@@ -1042,9 +1042,15 @@ function buildEnrichedCompras(){
   var rows=V['compras_rows']||[];
   if(!rows.length)return[];
   var fornMap=V['forn_map']||{};
-  var estAtual=estoqueItens[estoqueDeposito]||[];
+  // Combina estoque dos dois depósitos (Amora RS + Boeng)
   var estMap={},custoEstMap={};
-  estAtual.forEach(function(i){estMap[i.codigo]=parseFloat(i.quantidade||0);custoEstMap[i.codigo]=parseFloat(i.custo||0);});
+  ['amora_rs','boeng'].forEach(function(dep){
+    (estoqueItens[dep]||[]).forEach(function(i){
+      var cod=i.codigo;
+      estMap[cod]=(estMap[cod]||0)+parseFloat(i.quantidade||0);
+      if(!custoEstMap[cod])custoEstMap[cod]=parseFloat(i.custo||0); // usa custo do primeiro dep encontrado
+    });
+  });
   var periodoDias=parseFloat(V['compras_periodo']||129);
   var meses=periodoDias/30.4;
   var enriched=rows.map(function(r){
@@ -1091,6 +1097,9 @@ function renderCompras(){
   if(V['forn_map']&&Object.keys(V['forn_map']||{}).length)html+='<button class="btn-limpar" onclick="V[\'forn_map\']=null;agendarSalvar();renderSecao(\'compras\')" title="Limpar vínculos de fornecedor">✕</button>';
   html+='</div></div>';
   html+='</div>';
+  // Carregar estoque do banco se ainda não estiver em memória
+  var estCarregado=estoqueItens.amora_rs.length>0||estoqueItens.boeng.length>0;
+  if(!estCarregado)loadEstoqueFromDB().then(function(){renderSecao('compras');});
   var rows=V['compras_rows']||[];
   if(!rows.length){
     html+='<div class="hist-vazio" style="margin-top:16px;">Carregue o relatório <strong>Vendas por Item</strong> exportado do ERP para visualizar a análise de compras.</div>';
@@ -1141,6 +1150,13 @@ function renderCompras(){
   // ── Stat cards ──
   var totalVendido=enriched.reduce(function(s,r){return s+r.preco_total;},0);
   var margemMedia=enriched.length>0?enriched.reduce(function(s,r){return s+r.marg_pct;},0)/enriched.length:0;
+  var nCruzados=enriched.filter(function(r){return r.urgencia!==4;}).length;
+  // Status de cada depósito
+  var depStatus=[];
+  if(estoqueItens.amora_rs.length>0)depStatus.push('Amora RS ('+estoqueItens.amora_rs.length+')');
+  if(estoqueItens.boeng.length>0)depStatus.push('Boeng ('+estoqueItens.boeng.length+')');
+  var estLabel=depStatus.length>0?depStatus.join(' + '):'⚠️ Sem estoque — vá à aba Estoque e importe';
+  var estCor=depStatus.length>0?'#16A34A':'#DC2626';
   html+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">';
   [{l:'SKUs analisados',v:enriched.length+'',c:cor},{l:'Fornecedores',v:fornList.length||'—',c:'#0F6E56'},
    {l:'Faturamento',v:'R$ '+totalVendido.toLocaleString('pt-BR',{maximumFractionDigits:0}),c:'#16A34A'},
@@ -1150,6 +1166,12 @@ function renderCompras(){
     html+='<div style="font-size:15px;font-weight:700;color:'+k.c+';">'+k.v+'</div>';
     html+='</div>';
   });
+  // Card de estoque cruzado
+  html+='<div style="flex:2;min-width:200px;background:var(--n);border-radius:10px;padding:8px 12px;border:1.5px solid '+estCor+'44;">';
+  html+='<div style="font-size:10px;color:var(--i);opacity:.7;margin-bottom:1px;">Estoque cruzado</div>';
+  html+='<div style="font-size:13px;font-weight:700;color:'+estCor+';">'+estLabel+'</div>';
+  if(depStatus.length>0)html+='<div style="font-size:10px;color:#6B7280;margin-top:2px;">'+nCruzados+' de '+enriched.length+' SKUs com estoque mapeado</div>';
+  html+='</div>';
   html+='</div>';
   // ── Barra de filtros + botão OC ──
   html+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center;">';
